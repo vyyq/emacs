@@ -33,8 +33,6 @@
 ;;; Code:
 
 (require 'erc)
-(require 'auth-source)
-(require 'erc-networks)
 
 (defgroup erc-autojoin nil
   "Enable autojoining."
@@ -123,33 +121,33 @@ This is called from a timer set up by `erc-autojoin-channels'."
       (erc-autojoin-channels server nick))))
 
 (defun erc-autojoin-server-match (candidate)
-  "Match the current network or server against CANDIDATE.
-This should be a key from `erc-autojoin-channels-alist'."
-  (or (eq candidate (erc-network))
-      (and (stringp candidate)
-	   (string-match-p candidate
-                           (or erc-server-announced-name
-			       erc-session-server)))))
+  "Match the current session ID or server against CANDIDATE.
+CANDIDATE is a key from `erc-autojoin-channels-alist'.  Return the
+matching entity, either a string or a non-nil symbol, in the case of a
+network or a session ID.  Return nil on failure."
+  (if (symbolp candidate)
+      (when-let ((esid (erc-networks--id-symbol erc-networks--id))
+                 ((eq esid candidate)))
+        esid)
+    (when (stringp candidate)
+      (string-match-p candidate (or erc-server-announced-name
+                                    erc-session-server)))))
+
+(defun erc-autojoin--join ()
+  ;; This is called in the server buffer
+  (pcase-dolist (`(,name . ,channels) erc-autojoin-channels-alist)
+    (when-let ((match (erc-autojoin-server-match name)))
+      (dolist (chan channels)
+        (let ((buf (erc-get-buffer chan erc-server-process)))
+          (unless (and buf (with-current-buffer buf
+                             (erc--current-buffer-joined-p)))
+            (erc-server-join-channel match chan)))))))
 
 (defun erc-autojoin-after-ident (_network _nick)
   "Autojoin channels in `erc-autojoin-channels-alist'.
 This function is run from `erc-nickserv-identified-hook'."
-  (if erc--autojoin-timer
-      (setq erc--autojoin-timer
-	    (cancel-timer erc--autojoin-timer)))
   (when (eq erc-autojoin-timing 'ident)
-    (let ((server (or erc-session-server erc-server-announced-name))
-	  (joined (mapcar (lambda (buf)
-			    (with-current-buffer buf (erc-default-target)))
-			  (erc-channel-list erc-server-process))))
-      ;; We may already be in these channels, e.g. because the
-      ;; autojoin timer went off.
-      (dolist (l erc-autojoin-channels-alist)
-	(when (erc-autojoin-server-match (car l))
-	  (dolist (chan (cdr l))
-	    (unless (erc-member-ignore-case chan joined)
-	      (erc-server-join-channel server chan)))))))
-  nil)
+    (erc-autojoin--join)))
 
 (defun erc-autojoin-channels (server nick)
   "Autojoin channels in `erc-autojoin-channels-alist'."
@@ -162,24 +160,7 @@ This function is run from `erc-nickserv-identified-hook'."
 			      #'erc-autojoin-channels-delayed
 			      server nick (current-buffer))))
     ;; `erc-autojoin-timing' is `connect':
-    (let ((server (or erc-session-server erc-server-announced-name)))
-      (dolist (l erc-autojoin-channels-alist)
-        (when (erc-autojoin-server-match (car l))
-	  (dolist (chan (cdr l))
-	    (let ((buffer
-                   (car (erc-buffer-filter
-                         (lambda ()
-                           (let ((current (erc-default-target)))
-                             (and (stringp current)
-                                  (erc-autojoin-server-match (car l))
-                                  (string-equal (erc-downcase chan)
-                                                (erc-downcase current)))))))))
-	      (when (or (not buffer)
-			(not (with-current-buffer buffer
-                               (erc--current-buffer-joined-p))))
-		(erc-server-join-channel server chan))))))))
-  ;; Return nil to avoid stomping on any other hook funcs.
-  nil)
+    (erc-autojoin--join)))
 
 (defun erc-autojoin-current-server ()
   "Compute the current server for lookup in `erc-autojoin-channels-alist'.
@@ -192,22 +173,17 @@ Respects `erc-autojoin-domain-only'."
 
 (defun erc-autojoin-add (proc parsed)
   "Add the channel being joined to `erc-autojoin-channels-alist'."
-  (let* ((chnl (erc-response.contents parsed))
-	 (nick (car (erc-parse-user (erc-response.sender parsed))))
-	 (server (with-current-buffer (process-buffer proc)
-		   (erc-autojoin-current-server))))
-    (when (erc-current-nick-p nick)
-      (let ((elem (or (assoc (erc-network) erc-autojoin-channels-alist)
-		      (assoc server erc-autojoin-channels-alist))))
-	(if elem
-	    (unless (member chnl (cdr elem))
-	      (setcdr elem (cons chnl (cdr elem))))
-	  ;; This always keys on server, not network -- user can
-	  ;; override by simply adding a network to
-	  ;; `erc-autojoin-channels-alist'
-	  (setq erc-autojoin-channels-alist
-		(cons (list server chnl)
-		      erc-autojoin-channels-alist))))))
+  (when-let* ((nick (car (erc-parse-user (erc-response.sender parsed))))
+              ((erc-current-nick-p nick))
+              (chnl (erc-response.contents parsed))
+              (elem (or (and (erc-valid-local-channel-p chnl)
+                             (regexp-quote erc-server-announced-name))
+                        (erc-networks--id-symbol erc-networks--id)
+                        (with-current-buffer (process-buffer proc)
+                          (erc-autojoin-current-server)))))
+    (cl-pushnew chnl (alist-get elem erc-autojoin-channels-alist
+                                nil nil (if (symbolp elem) #'eq #'equal))
+                :test #'equal))
   ;; We must return nil to tell ERC to continue running the other
   ;; functions.
   nil)
@@ -216,18 +192,19 @@ Respects `erc-autojoin-domain-only'."
 
 (defun erc-autojoin-remove (proc parsed)
   "Remove the channel being left from `erc-autojoin-channels-alist'."
-  (let* ((chnl (car (erc-response.command-args parsed)))
-	 (nick (car (erc-parse-user (erc-response.sender parsed))))
-	 (server (with-current-buffer (process-buffer proc)
-		   (erc-autojoin-current-server))))
-    (when (erc-current-nick-p nick)
-      (let ((elem (or (assoc (erc-network) erc-autojoin-channels-alist)
-		      (assoc server erc-autojoin-channels-alist))))
-	(when elem
-	  (setcdr elem (delete chnl (cdr elem)))
-	  (unless (cdr elem)
-	    (setq erc-autojoin-channels-alist
-		  (delete elem erc-autojoin-channels-alist)))))))
+  (when-let* ((nick (car (erc-parse-user (erc-response.sender parsed))))
+              ((erc-current-nick-p nick))
+              (chnl (car (erc-response.command-args parsed)))
+              (elem (or (and (erc-valid-local-channel-p chnl)
+                             (regexp-quote erc-server-announced-name))
+                        (erc-networks--id-symbol erc-networks--id)
+                        (with-current-buffer (process-buffer proc)
+                          (erc-autojoin-current-server))))
+              (test (if (symbolp elem) #'eq #'equal)))
+    (let ((chans (delete chnl (assoc-default elem erc-autojoin-channels-alist
+                                             test))))
+      (setf (alist-get elem erc-autojoin-channels-alist nil (null chans) test)
+            chans)))
   ;; We must return nil to tell ERC to continue running the other
   ;; functions.
   nil)
