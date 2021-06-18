@@ -545,20 +545,28 @@ Non-interactively, it takes the following keyword arguments.
 @item @var{server}
 @item @var{port}
 @item @var{nick}
+@item @var{user}
 @item @var{password}
 @item @var{full-name}
+@item @var{id}
 @end itemize
 
-That is, if called with the following arguments, @var{server} and
-@var{full-name} will be set to those values, whereas
-@code{erc-compute-port} and @code{erc-compute-nick} will be invoked
-for the values of the other parameters.
+That is, if called with the following arguments
 
 @example
 (erc :server "irc.libera.chat" :full-name "J. Random Hacker")
 @end example
+
+@var{server} and @var{full-name} will be set to those values, whereas
+helpers like @code{erc-compute-port} and @code{erc-compute-nick} will
+be invoked for the values of the other parameters.
+
+The optional @var{id} parameter is generally unneeded and isn't
+available interactively.  See dedicated subsection below for details.
+
 @end defun
 
+@noindent
 To connect securely over an encrypted TLS connection, use @kbd{M-x
 erc-tls}.
 
@@ -570,20 +578,23 @@ Non-interactively, it takes the following keyword arguments.
 @item @var{server}
 @item @var{port}
 @item @var{nick}
+@item @var{user}
 @item @var{password}
 @item @var{full-name}
+@item @var{id}
 @item @var{client-certificate}
 @end itemize
 
-That is, if called with the following arguments, @var{server} and
-@var{full-name} will be set to those values, whereas
-@code{erc-compute-port} and @code{erc-compute-nick} will be invoked
-for the values of the other parameters, and @code{client-certificate}
-will be @code{nil}.
+That is, if called with the following arguments
 
 @example
 (erc-tls :server "irc.libera.chat" :full-name "J. Random Hacker")
 @end example
+
+@var{server} and @var{full-name} will be set to those values, whereas
+helpers like @code{erc-compute-port} and @code{erc-compute-nick} will
+be invoked for the values of the other parameters, and
+@code{client-certificate} will be @code{nil}.
 
 To use a certificate with @code{erc-tls}, specify the optional
 @var{client-certificate} keyword argument, whose value should be as
@@ -719,26 +730,91 @@ ERC should automatically attempt to connect with another nickname.
 You can manually set another nickname with the /NICK command.
 @end defopt
 
+@subheading User
+@defun erc-compute-user &optional user
+Return the first argument sent for the opening ``USER'' IRC command
+by consulting the following sources:
+
+@itemize
+@item @var{user} (the argument passed to this function)
+@item The @code{erc-email-userid} option, assuming @code{erc-anonymous-login} is non-nil
+@item The result of calling the function @code{user-login-name}
+@end itemize
+
+@end defun
+
+@defopt erc-email-userid
+A permanent username value to use for all connections.  It should be a
+string abiding by the rules of the network.
+@end defopt
+
 @subheading Password
 @cindex password
 
 @defopt erc-prompt-for-password
-If non-@code{nil} (the default), @kbd{M-x erc} prompts for a password.
+If non-@code{nil} (the default), @kbd{M-x erc} prompts for a server
+password.  This only affects interactive invocations of @code{erc} and
+@code{erc-tls}.
 @end defopt
 
+@noindent
 If you prefer, you can set this option to @code{nil} and use the
 @code{auth-source} mechanism to store your password.  For instance, if
-you use @file{~/.authinfo} as your auth-source backend, then put
+the option @code{auth-sources} contains @file{~/.authinfo}, put
 something like the following in that file:
 
 @example
-machine irc.example.net login "#fsf" password sEcReT
+machine irc.example.net login mynick password sEcReT
 @end example
 
 @noindent
+Here, @code{irc.example.net} corresponds to the @var{server} param
+passed to @code{erc} or @code{erc-tls} or provideed at the ``IRC
+server:'' prompt.  Unfortunately, specifying a network, like
+``Libera.Chat'', or a specific network server, like
+@code{zirconium.libera.chat}, won't work for this introductory
+exchange because IRC servers don't provide such information up front.
+
+If ERC can't find a suitable server password, it'll just skip the IRC
+@code{PASS} command altogether, something users may want when using
+CertFP or engaging NickServ via ERC's ``services'' module.  If that
+sounds like you, set the option @code{erc-connect-auth-source-host} to
+@code{nil}.  You can also set it to @code{t} to tell ERC to favor a
+``network identifier'' (corresponding to the @var{id} parameter of
+@code{erc-tls}) as the ``machine'' field and to fall back on
+@var{server} when an @var{id} hasn't been provided.  Note that some
+networks and IRCds may support account-services authentication via
+server password when specified using the non-standard
+``mynick:sEcReT'' convention.
+
+@code{auth-source} can also be used to authenticate to account
+services the traditional way, through a bot called ``NickServ''.  To
+tell ERC to do that, set the option
+@code{erc-use-auth-source-for-nickserv-password} to @code{t}.  For
+these queries, entries featuring user-provided IDs and networks are
+matched first, followed by network-specific servers and dialed TCP
+endpoints (the @var{SERVER} passed to @code{erc}). The following
+netrc-style entries appear in order of precedence:
+
+@example
+machine Libera/cellphone login "mynick" password sEcReT
+machine Libera.Chat login "mynick" password sEcReT
+machine zirconium.libera.chat login "mynick" password sEcReT
+machine irc.libera.chat login "mynick" password sEcReT
+@end example
+
+@noindent
+To modify this behavior, for example by signaling an error instead of
+degrading gracefully (which may feel like anything but, depending on
+your use case), see option @code{erc-auth-source-parameters-function}.
+
 ERC also consults @code{auth-source} to find any channel keys required
 for the channels that you wish to autojoin, as specified by the
-variable @code{erc-autojoin-channels-alist}.
+variable @code{erc-autojoin-channels-alist}.  When modifying a
+netrc-style @code{auth-source} file for such use, ensure an entry
+exists with the channel name, for example ``#erc'', in the value of
+the ``login'' field (also known as the ``user'' field). The actual key
+goes in the ``password'' field.
 
 For more details, @pxref{Top,,auth-source, auth, Emacs auth-source Library}.
 
@@ -765,6 +841,30 @@ User full name.
 
 This can be either a string or a function to call.
 @end defopt
+
+
+@subheading ID
+Every IRC connection has a ``network identifier''.  It's an abstract
+concept used internally for referring to a connection, primarily for
+the purpose of wrangling buffers.  An ID is normally derived from a
+combination of logical and physical connection parameters (typically
+IRC and TCP, respectively).  Explicitly providing one to an
+entry-point function (like @code{erc-tls}) is rarely needed except in
+rare situations where ERC would otherwise have trouble discerning
+between connections.
+
+One such situation would be to allow multiple connections to the same
+network with the same nick but different (non-standard) "device"
+identifiers, which some bouncers may support.  Another might be to
+mimic the experience of popular standalone clients, which normally
+offer ``named'' persistent configurations with server buffers
+reflecting those names.  Yet another use case might involve
+third-party code needing to identify a connection unequivocally but in
+a human-friendly way devoid of noisy suffixes.
+
+Strings and symbols make the most sense when providing an ID as an
+entry-point argument, but any printable object is acceptable.
+
 
 @node Sample Configuration
 @section Sample Configuration
@@ -827,12 +927,6 @@ stuff, to the current ERC buffer."
 (setq erc-autojoin-channels-alist
       '(("Libera.Chat" "#emacs" "#erc")))
 
-;; Rename server buffers to reflect the current network name instead
-;; of SERVER:PORT (e.g., "Libera.Chat" instead of
-;; "irc.libera.chat:6667").  This is useful when using a bouncer like
-;; ZNC where you have multiple connections to the same server.
-(setq erc-rename-buffers t)
-
 ;; Interpret mIRC-style color commands in IRC chats
 (setq erc-interpret-mirc-color t)
 
@@ -891,15 +985,6 @@ lurkers.  The function @code{erc-lurker-p} determines whether a given
 nickname is considered a lurker.
 @end defopt
 
-@defopt erc-rename-buffers
-If non, @code{nil}, this will rename server buffers to reflect the
-current network name instead of IP:PORT
-
-@example
-(setq erc-rename-buffers t)
-@end example
-@end defopt
-
 @node Getting Help and Reporting Bugs
 @chapter Getting Help and Reporting Bugs
 @cindex help, getting
@@ -924,7 +1009,7 @@ contributors are frequently around and willing to answer your
 questions.
 
 @item
-To report a bug in ERC, use @kbd{M-x report-emacs-bug}.
+To report a bug in ERC, use @kbd{M-x erc-bug}.
 
 @end itemize
 
