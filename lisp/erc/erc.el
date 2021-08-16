@@ -227,9 +227,14 @@ parameters and authentication."
                         "old behavior when t now permanent" "29.1")
 
 (defvar erc-password nil
-  "Password to use when authenticating to an IRC server.
-It is not strictly necessary to provide this, since ERC will
-prompt you for it.")
+  "Password to use when authenticating to an IRC server interactively.
+
+This variable only exists for legacy reasons.  It's not customizable and
+is limited to a single server password.  Users looking for similar
+functionality should consider auth-source instead.  See info
+node `(auth) Top' and info node `(erc) Connecting'.")
+
+(make-obsolete-variable 'erc-password "use auth-source instead" "29.1")
 
 (defcustom erc-user-mode "+i"
   ;; +i "Invisible".  Hides user from global /who and /names.
@@ -240,9 +245,31 @@ prompt you for it.")
 
 
 (defcustom erc-prompt-for-password t
-  "Asks before using the default password, or whether to enter a new one."
+  "Ask for a server password when invoking `erc-tls' interactively."
   :group 'erc
   :type 'boolean)
+
+(defcustom erc-connect-auth-source-host 'server
+  "Host \"type\" for querying auth-source when first connecting.
+This is for determining the \"server password\" argument of the IRC
+\"PASS\" command sent to the server.  The entry points `erc' and
+`erc-tls' query auth-source for such a password when a :password
+argument isn't provided.  Because ERC also interfaces with auth-source
+for other secrets, such as NickServ passwords and channel keys,
+additional ways of selecting entries are sometimes necessary.  See info
+node `(auth) Top'.
+
+Note that there aren't any options for specifying a network, like
+Libera.Chat, or a network-specific server, such as foo.libera.chat,
+because such information isn't available until after initial
+introductions have completed (\"registration\" in IRC speak)."
+  :package-version '(ERC . "5.4.1") ; FIXME increment upon publishing to ELPA
+  :group 'erc
+  :type '(choice (const :tag "Don't query auth-source" nil)
+                 (const :tag "Dialed host name or IP address" server)
+                 (const :tag "Prompt for a machine/host value" prompt)
+                 (const :tag "Session ID, if set, otherwise server" t)
+                 (string :tag "Literal value to use for :host")))
 
 (defcustom erc-warn-about-blank-lines t
   "Warn the user if they attempt to send a blank line."
@@ -2160,15 +2187,6 @@ Returns the buffer for the given server or channel."
     (setq erc-logged-in nil)
     ;; The local copy of `erc-nick' - the list of nicks to choose
     (setq erc-default-nicks (if (consp erc-nick) erc-nick (list erc-nick)))
-    ;; password stuff
-    (setq erc-session-password
-          (or passwd
-              (auth-source-pick-first-password
-               :host server
-               :user nick
-               ;; secrets.el wouldn’t accept a number
-               :port (if (numberp port) (number-to-string port) port)
-               :require '(:secret))))
     ;; client certificate (only useful if connecting over TLS)
     (setq erc-session-client-certificate client-certificate)
     (setq erc-networks--id (if connect
@@ -2190,7 +2208,7 @@ Returns the buffer for the given server or channel."
       (erc-display-prompt)
       (goto-char (point-max)))
 
-    (erc-determine-parameters server port nick full-name user)
+    (erc-determine-parameters server port nick full-name user passwd)
 
     ;; Saving log file on exit
     (run-hook-with-args 'erc-connect-pre-hook buffer)
@@ -2288,11 +2306,9 @@ parameters SERVER and NICK."
     (setq server user-input)
 
     (setq passwd (if erc-prompt-for-password
-                     (if (and erc-password
-                              (y-or-n-p "Use the default password? "))
-                         erc-password
-                       (read-passwd "Password: "))
-                   erc-password))
+                     (read-passwd "Server password: ")
+                   (with-suppressed-warnings ((obsolete erc-password))
+                     erc-password)))
     (when (and passwd (string= "" passwd))
       (setq passwd nil))
 
@@ -3305,18 +3321,104 @@ For a list of user commands (/join /part, ...):
 (defalias 'erc-cmd-H #'erc-cmd-HELP)
 (put 'erc-cmd-HELP 'process-not-needed t)
 
+(defcustom erc-auth-source-parameters-function
+  #'erc--auth-source-determine-params
+  "A function providing args to pass to `auth-source-search'.
+This is called with no arguments and should return a plist of keyword
+args accepted by `auth-source-search'.  The ordering of the pairs
+influences how results are filtered as does the ordering of the members
+of any composite pair values, when applicable.  If necessary, the former
+takes priority over the latter.  For example, if the function returns
+
+  (:host (foo bar) :port (123 456) :require (:secret))
+
+the secret from an auth-source entry of host foo and port 456
+will be chosen over another of host bar and port 123.  However,
+if the function returns
+
+  (:port (123 456) :host (foo bar) :require (:secret))
+
+the opposite will be true.  In both cases, two entries with the same
+host but different ports would see the one with port 123 being selected.
+Much the same would happen for entries sharing only a port: the one with
+host foo would win.
+
+Some auth-source back ends may not be compatible (netrc and pass are
+currently supported)."
+  :package-version '(ERC . "5.4.1") ; FIXME increment upon publishing to ELPA
+  :group 'erc
+  :type 'function)
+
+(defun erc--auth-source-determine-params ()
+  "Return a plist of default args to pass to `auth-source-search'.
+Favor a network ID over an announced server unless `erc--target' is a
+local channel.  Treat the dialed server address as a fallback for the
+announced name in both cases."
+  (let* ((net (and-let* ((esid (erc-networks--id-symbol erc-networks--id))
+                         ((symbol-name esid)))))
+         (localp (and erc--target (erc--target-channel-local-p erc--target)))
+         (hosts (if localp
+                    (list erc-server-announced-name erc-session-server net)
+                  (list net erc-server-announced-name erc-session-server)))
+         (ports (list (cl-typecase erc-session-port
+                        (integer (number-to-string erc-session-port))
+                        (string (and (string= erc-session-port "irc")
+                                     erc-session-port)) ; or nil
+                        (t erc-session-port))
+                      "irc")))
+    (list :host (delq nil hosts)
+          :port (delq nil ports)
+          :require '(:secret))))
+
+(declare-function erc-compat--auth-source-pass-backend-parse
+                  "erc-compat" (entry))
+
+(defun erc--auth-source-search (&rest plist)
+  "Ask auth-source for a secret and return it if found.
+Favor overrides in PLIST, if any.  Otherwise, use whatever's present in
+the list returned by `erc-auth-source-parameters-function'.  Return a
+string if found or nil otherwise."
+  (let* ((auth-source-backend-parser-functions
+          (if (memq 'password-store auth-sources)
+              (cons #'erc-compat--auth-source-pass-backend-parse
+                    auth-source-backend-parser-functions)
+            auth-source-backend-parser-functions))
+         (defaults (funcall erc-auth-source-parameters-function))
+         priority
+         (test (lambda (a b)
+                 (catch 'done
+                   (dolist (key priority)
+                     (let* ((d (plist-get defaults key))
+                            (default-value (if (listp d) d (list d)))
+                            ;; featurep 'seq via auth-source > json > map
+                            (p (seq-position default-value (plist-get a key)))
+                            (q (seq-position default-value (plist-get b key))))
+                       (unless (eql p q)
+                         (throw 'done (when p (or (not q) (< p q)))))))))))
+    (cl-loop for (key value) on defaults by #'cddr
+             when value unless (plist-get plist key)
+             do (setq plist (plist-put plist key value)))
+    (let ((keys (nreverse (map-keys defaults))))
+      (dolist (key (map-keys plist))
+        (cl-pushnew key keys))
+      (setq priority (nreverse keys)))
+    (unless (plist-get plist :max) ; from `auth-source-netrc-parse'
+      (setq plist (plist-put plist :max 5000)))
+    (when-let* ((sorted (sort (apply #'auth-source-search plist) test))
+                (secret (plist-get (car sorted) :secret)))
+      (if (functionp secret) (funcall secret) secret))))
+
 (defun erc-server-join-channel (server channel &optional secret)
-  (let ((password
-         (or secret
-             (auth-source-pick-first-password
-	      :host server
-	      :port "irc"
-	      :user channel))))
-    (erc-log (format "cmd: JOIN: %s" channel))
-    (erc-server-send (concat "JOIN " channel
-			     (if password
-				 (concat " " password)
-			       "")))))
+  "Join CHANNEL, optionally with SECRET.
+Without SECRET, consult auth source, using SERVER if non-nil."
+  (unless secret
+    (unless server
+      (when (and erc-server-announced-name (erc-valid-local-channel-p channel))
+        (setq server erc-server-announced-name)))
+    (let ((args `(,@(when server (list :host server)) :user channel)))
+      (setq secret (apply #'erc--auth-source-search args))))
+  (erc-log (format "cmd: JOIN: %s" channel))
+  (erc-server-send (concat "JOIN " channel (when secret (concat " " secret)))))
 
 (defun erc-valid-local-channel-p (channel)
   "Non-nil when channel is server-local on a network that allows them."
@@ -3338,19 +3440,12 @@ were most recently invited.  See also `invitation'."
       (setq chnl (erc-ensure-channel-name channel)))
     (when chnl
       ;; Prevent double joining of same channel on same server.
-      (let* ((joined-channels
-              (mapcar (lambda (chanbuf)
-                        (with-current-buffer chanbuf (erc-default-target)))
-                      (erc-channel-list erc-server-process)))
-             (server (with-current-buffer (process-buffer erc-server-process)
-		       (or erc-session-server erc-server-announced-name)))
-             (chnl-name (car (erc-member-ignore-case chnl joined-channels))))
-        (if chnl-name
-            (switch-to-buffer (if (get-buffer chnl-name)
-                                  chnl-name
-                                (concat chnl-name "/" server)))
-          (setq erc--server-last-reconnect-count 0)
-	  (erc-server-join-channel server chnl key)))))
+      (if-let* ((existing (erc-get-buffer chnl erc-server-process))
+                ((with-current-buffer existing
+                   (erc-get-channel-user (erc-current-nick)))))
+          (switch-to-buffer existing)
+        (setq erc--server-last-reconnect-count 0)
+        (erc-server-join-channel nil chnl key))))
   t)
 
 (defalias 'erc-cmd-CHANNEL #'erc-cmd-JOIN)
@@ -6305,7 +6400,7 @@ user input."
 
 ;; connection properties' heuristics
 
-(defun erc-determine-parameters (&optional server port nick name user)
+(defun erc-determine-parameters (&optional server port nick name user passwd)
   "Determine the connection and authentication parameters.
 Sets the buffer local variables:
 
@@ -6314,12 +6409,14 @@ Sets the buffer local variables:
 - `erc-session-port'
 - `erc-session-user-full-name'
 - `erc-session-username'
+- `erc-session-password'
 - `erc-server-current-nick'"
   (setq erc-session-connector erc-server-connect-function
         erc-session-server (erc-compute-server server)
         erc-session-port (or port erc-default-port)
         erc-session-user-full-name (erc-compute-full-name name)
-        erc-session-username (erc-compute-user user))
+        erc-session-username (erc-compute-user user)
+        erc-session-password (erc-compute-server-password passwd nick))
   (erc-set-current-nick (erc-compute-nick nick)))
 
 (defun erc-compute-server (&optional server)
@@ -6356,6 +6453,19 @@ non-nil value is found.
       (getenv "IRCNICK")
       (user-login-name)))
 
+(defun erc-compute-server-password (password nick)
+  "Determine initial PASSWORD value for IRC PASS command.
+Use the value of `erc-connect-auth-source-host' to determine the
+machine/host query param.  Use NICK for the user/login query param."
+  (or password
+      (when erc-connect-auth-source-host
+        (let* ((host (pcase erc-connect-auth-source-host
+                       ('server erc-session-server)
+                       ((and (pred stringp) v) v)
+                       ('prompt (read-string "Auth-source host: "
+                                             nil t (list nil)))))
+               (args `(,@(when host (list :host host)) :user ,nick)))
+          (apply #'erc--auth-source-search args)))))
 
 (defun erc-compute-full-name (&optional full-name)
   "Return user's full name.

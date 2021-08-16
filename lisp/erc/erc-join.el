@@ -141,7 +141,7 @@ network or a session ID.  Return nil on failure."
         (let ((buf (erc-get-buffer chan erc-server-process)))
           (unless (and buf (with-current-buffer buf
                              (erc--current-buffer-joined-p)))
-            (erc-server-join-channel match chan)))))))
+            (erc-server-join-channel nil chan)))))))
 
 (defun erc-autojoin-after-ident (_network _nick)
   "Autojoin channels in `erc-autojoin-channels-alist'.

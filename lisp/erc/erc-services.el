@@ -202,7 +202,7 @@ Example of use:
 			(const QuakeNet)
 			(const Rizon)
 			(const SlashNET)
-			(symbol :tag "Network name"))
+                        (symbol :tag "Network name or session ID"))
 		(repeat :tag "Nickname and password"
 			(cons :tag "Identity"
 			      (string :tag "Nick")
@@ -431,31 +431,19 @@ As soon as some source returns a password, the sequence of
 lookups stops and this function returns it (or returns nil if it
 is empty).  Otherwise, no corresponding password was found, and
 it returns nil."
-  (let (network server port)
-    ;; Fill in local vars, switching to the server buffer once only
-    (erc-with-server-buffer
-     (setq network erc-network
-           server erc-session-server
-           port erc-session-port))
-    (let ((ret
-           (or
-            (when erc-nickserv-passwords
-              (cdr (assoc nick
-                          (cl-second (assoc network
-                                            erc-nickserv-passwords)))))
-            (when erc-use-auth-source-for-nickserv-password
-              (auth-source-pick-first-password
-               :require '(:secret)
-               :host server
-               ;; Ensure a string for :port
-               :port (format "%s" port)
-               :user nick))
-            (when erc-prompt-for-nickserv-password
-              (read-passwd
-               (format "NickServ password for %s on %s (RET to cancel): "
-                       nick network))))))
-      (when (and ret (not (string= ret "")))
-        ret))))
+  (when-let*
+      ((esid (erc-networks--id-symbol erc-networks--id))
+       (ret (or (when erc-nickserv-passwords
+                  (assoc-default nick
+                                 (cadr (assq esid erc-nickserv-passwords))))
+                (when erc-use-auth-source-for-nickserv-password
+                  (erc--auth-source-search :user nick))
+                (when erc-prompt-for-nickserv-password
+                  (read-passwd
+                   (format "NickServ password for %s on %s (RET to cancel): "
+                           nick esid)))))
+       ((not (string-empty-p ret))))
+    ret))
 
 (defvar erc-auto-discard-away)
 
