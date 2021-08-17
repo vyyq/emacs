@@ -733,7 +733,6 @@ MATCHER is used to find a corresponding network to a server while
 
 ;; Functions:
 
-;;;###autoload
 (defun erc-determine-network ()
   "Return the name of the network or \"Unknown\" as a symbol.
 Use the server parameter NETWORK if provided, otherwise parse the
@@ -753,7 +752,7 @@ server name and search for a match in `erc-networks-alist'."
 
 (defun erc-network ()
   "Return the value of `erc-network' for the current server."
-  (erc-with-server-buffer erc-network))
+  (or erc-network (erc-with-server-buffer erc-network)))
 
 (defun erc-network-name ()
   "Return the name of the current network as a string."
