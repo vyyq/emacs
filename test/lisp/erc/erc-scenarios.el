@@ -1898,6 +1898,138 @@ collisions involving bouncers in ERC.  Run EXTRA."
       (should (not (get-buffer "foonet/dummy")))
       (should (get-buffer "foonet")))))
 
+;; Auth source consulted for initial PASS arg.  Option
+;;  `erc-connect-auth-source-host' obeyed.
+
+(defun erc-scenarios-common--auth-source (id dialog &rest rest)
+  (push "machine GNU.chat port %d user \"#chan\" password spam" rest)
+  (erc-scenarios-common-with-cleanup
+      ((erc-scenarios-common-dialog "base/auth-source")
+       (dumb-server (erc-d-run "localhost" t dialog))
+       (port (process-contact dumb-server :service))
+       (ents `(,@(mapcar (lambda (fmt) (format fmt port)) rest)
+               "machine MyHost port irc password 123"))
+       (netrc-file (make-temp-file "auth-source-test" nil nil
+                                   (string-join ents "\n")))
+       (auth-sources (list netrc-file))
+       (auth-source-do-cache nil)
+       (erc-scenarios-common-extra-teardown (lambda ()
+                                              (delete-file netrc-file))))
+
+    (ert-info ("Connect")
+      (with-current-buffer (erc :server "127.0.0.1"
+                                :port port
+                                :nick "tester"
+                                :full-name "tester"
+                                :id id)
+        (should (string= (buffer-name) (if id
+                                           (symbol-name id)
+                                         (format "127.0.0.1:%d" port))))
+        (erc-d-t-wait-for 1 (eq erc-network 'FooNet))))))
+
+(ert-deftest erc-scenarios-base-auth-source--dialed ()
+  (should (eq erc-connect-auth-source-host 'server))
+  (erc-scenarios-common--auth-source
+   nil 'foonet
+   "machine GNU.chat port %d user tester password fake"
+   "machine 127.0.0.1 port %d user tester password changeme"
+   "machine 127.0.0.1 port %d user imposter password fake"))
+
+(ert-deftest erc-scenarios-base-auth-source--dialed-fallback ()
+  (let ((erc-connect-auth-source-host t))
+    (erc-scenarios-common--auth-source
+     nil 'foonet
+     "machine FooNet port %d user tester password fake"
+     "machine 127.0.0.1 port %d user tester password changeme"
+     "machine 127.0.0.1 port %d user imposter password fake")))
+
+(ert-deftest erc-scenarios-base-auth-source--network-id ()
+  (let ((erc-connect-auth-source-host t))
+    (erc-scenarios-common--auth-source
+     'MySession 'foonet
+     "machine MySession port %d user tester password changeme"
+     "machine 127.0.0.1 port %d user tester password fake"
+     "machine FooNet port %d user tester password fake")))
+
+(ert-deftest erc-scenarios-base-auth-source--string--network-id ()
+  (let ((erc-connect-auth-source-host "MyHost"))
+    (erc-scenarios-common--auth-source
+     'MySession 'foonet
+     "machine 127.0.0.1 port %d user tester password fake"
+     "machine MyHost port %d user tester password changeme"
+     "machine MySession port %d user tester password fake")))
+
+(ert-deftest erc-scenarios-base-auth-source--nopass ()
+  (let (erc-connect-auth-source-host) ; nil
+    (erc-scenarios-common--auth-source nil 'nopass)))
+
+(ert-deftest erc-scenarios-base-auth-source--nopass--network-id ()
+  (let (erc-connect-auth-source-host) ; nil
+    (erc-scenarios-common--auth-source 'MySession 'nopass)))
+
+;; Identify via auth source with no initial password
+
+(defun erc-scenarios-common--services-auth-source (&rest rest)
+  (defvar erc-use-auth-source-for-nickserv-password)
+  (erc-scenarios-common-with-cleanup
+      ((erc-scenarios-common-dialog "services/auth-source")
+       (erc-server-flood-penalty 0.1)
+       (dumb-server (erc-d-run "localhost" t 'libera))
+       (port (process-contact dumb-server :service))
+       (ents `(,@(mapcar (lambda (fmt) (format fmt port)) rest)
+               "machine MyHost port irc password 123"))
+       (netrc-file (make-temp-file "auth-source-test" nil nil
+                                   (string-join ents "\n")))
+       (auth-sources (list netrc-file))
+       (auth-source-do-cache nil)
+       (erc-modules (cons 'services erc-modules))
+       (erc-use-auth-source-for-nickserv-password t) ; do consult for NickServ
+       (expect (erc-d-t-make-expecter))
+       (erc-scenarios-common-extra-teardown (lambda ()
+                                              (delete-file netrc-file))))
+
+    (cl-letf (((symbol-function 'read-passwd)
+               (lambda (&rest _) (error "Unexpected read-passwd call"))))
+      (ert-info ("Connect without password")
+        (with-current-buffer (erc :server "127.0.0.1"
+                                  :port port
+                                  :nick "tester"
+                                  :full-name "tester")
+          (should (string= (buffer-name) (format "127.0.0.1:%d" port)))
+          (erc-d-t-wait-for 3 (eq erc-network 'Libera.Chat))
+          (funcall expect 3 "This nickname is registered.")
+          (funcall expect 3 "You are now identified")
+          (funcall expect 3 "Last login from")
+          (erc-cmd-QUIT ""))))
+
+    (erc-services-mode -1)
+
+    (should-not (memq 'services erc-modules))))
+
+(ert-deftest erc-scenarios-services-auth-source--network ()
+  (let (erc-connect-auth-source-host) ; don't consult auth-source for PASS
+    (erc-scenarios-common--services-auth-source
+     "machine 127.0.0.1 port %d user tester password spam"
+     "machine zirconium.libera.chat port %d user tester password fake"
+     "machine Libera.Chat port %d user tester password changeme")))
+
+(ert-deftest erc-scenarios-services-auth-source--network-connect-lookup ()
+  (should (eq erc-connect-auth-source-host 'server))
+  (erc-scenarios-common--services-auth-source
+   "machine zirconium.libera.chat port %d user tester password fake"
+   "machine Libera.Chat port %d user tester password changeme"))
+
+(ert-deftest erc-scenarios-services-auth-source--announced ()
+  (let (erc-connect-auth-source-host) ; don't consult auth-source for PASS
+    (erc-scenarios-common--services-auth-source
+     "machine 127.0.0.1 port %d user tester password spam"
+     "machine zirconium.libera.chat port %d user tester password changeme")))
+
+(ert-deftest erc-scenarios-services-auth-source--dialed ()
+  (let (erc-connect-auth-source-host) ; don't consult auth-source for PASS
+    (erc-scenarios-common--services-auth-source
+     "machine 127.0.0.1 port %d user tester password changeme")))
+
 (ert-deftest erc-scenarios-services-password ()
 
   (defvar erc-nickserv-passwords) ; <- FIXME what is this?
