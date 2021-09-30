@@ -271,6 +271,242 @@
        (funcall expect 5 "welcome again")
        (erc-cmd-QUIT "")))))
 
+;; XXX this is okay, but we also need to check that target buffers are
+;; already associated with a new process *before* a JOIN is sent by a
+;; server's playback burst.  This doesn't do that.
+;;
+;; This *does* check that superfluous JOINs sent by the autojoin
+;; module are harmless when they're not acked (superfluous because the
+;; bouncer/server intitates the JOIN).
+
+(defun erc-scenarios-common--join-network-id (foo-reconnector foo-id bar-id)
+  "Ensure channels rejoined by erc-join.el DTRT.
+Originally from scenario clash-of-chans/autojoin as described in
+Bug#48598: 28.0.50; buffer-naming collisions involving bouncers in ERC."
+  (erc-scenarios-common-with-cleanup
+      ((chan-buf-foo (format "#chan@%s" (or foo-id "foonet")))
+       (chan-buf-bar (format "#chan@%s" (or bar-id "barnet")))
+       (erc-scenarios-common-dialog "join/network-id")
+       (erc-d-t-cleanup-sleep-secs 1)
+       (erc-server-flood-penalty 0.5)
+       (dumb-server (erc-d-run "localhost" t 'foonet 'barnet 'foonet-again))
+       (port (process-contact dumb-server :service))
+       (expect (erc-d-t-make-expecter))
+       erc-server-buffer-foo erc-server-process-foo
+       erc-server-buffer-bar erc-server-process-bar)
+
+    (should (memq 'autojoin erc-modules))
+
+    (ert-info ("Connect to foonet")
+      (with-current-buffer
+          (setq erc-server-buffer-foo (erc :server "127.0.0.1"
+                                           :port port
+                                           :nick "tester"
+                                           :password "foonet:changeme"
+                                           :full-name "tester"
+                                           :id foo-id))
+        (setq erc-server-process-foo erc-server-process)
+        (erc-scenarios-common-assert-initial-buf-name foo-id port)
+        (erc-d-t-wait-for 1 (eq (erc-network) 'foonet))
+        (funcall expect 5 "foonet")))
+
+    (ert-info ("Join #chan, find sentinel, quit")
+      (with-current-buffer erc-server-buffer-foo (erc-cmd-JOIN "#chan"))
+      (with-current-buffer (erc-d-t-wait-for 5 (get-buffer "#chan"))
+        (funcall expect 5 "vile thing")
+        (erc-cmd-QUIT "")))
+
+    (erc-d-t-wait-for 2 "Foonet connection deceased"
+      (not (erc-server-process-alive erc-server-buffer-foo)))
+
+    (should (equal erc-autojoin-channels-alist
+                   (if foo-id '((oofnet "#chan")) '((foonet "#chan")))))
+
+    (ert-info ("Connect to barnet")
+      (with-current-buffer
+          (setq erc-server-buffer-bar (erc :server "127.0.0.1"
+                                           :port port
+                                           :nick "tester"
+                                           :password "barnet:changeme"
+                                           :full-name "tester"
+                                           :id bar-id))
+        (setq erc-server-process-bar erc-server-process)
+        (erc-d-t-wait-for 5 (eq erc-network 'barnet))
+        (should (string= (buffer-name) (if bar-id "rabnet" "barnet")))))
+
+    (ert-info ("Server buffers are unique, no stray IP-based names")
+      (should-not (eq erc-server-buffer-foo erc-server-buffer-bar))
+      (should-not (erc-scenarios-common-buflist "127.0.0.1")))
+
+    (ert-info ("Only one #chan buffer exists")
+      (should (equal (list (get-buffer "#chan"))
+                     (erc-scenarios-common-buflist "#chan"))))
+
+    (ert-info ("#chan is not auto-joined")
+      (with-current-buffer "#chan"
+        (erc-d-t-absent-for 0.1 "<joe>")
+        (should-not (process-live-p erc-server-process))
+        (erc-d-t-ensure-for 0.1 "server buffer remains foonet"
+          (eq erc-server-process erc-server-process-foo))))
+
+    (with-current-buffer erc-server-buffer-bar
+      (erc-cmd-JOIN "#chan")
+      (erc-d-t-wait-for 3 (get-buffer chan-buf-foo))
+      (erc-d-t-wait-for 3 (get-buffer chan-buf-bar))
+      (with-current-buffer chan-buf-bar
+        (erc-d-t-wait-for 3 (eq erc-server-process erc-server-process-bar))
+        (funcall expect 5 "marry her instantly")))
+
+    (ert-info ("Reconnect to foonet")
+      (with-current-buffer (setq erc-server-buffer-foo
+                                 (funcall foo-reconnector))
+        (should (member (if foo-id '(oofnet "#chan") '(foonet "#chan"))
+                        erc-autojoin-channels-alist))
+        (erc-d-t-wait-for 3 (erc-server-process-alive))
+        (setq erc-server-process-foo erc-server-process)
+        (erc-d-t-wait-for 2 (eq erc-network 'foonet))
+        (should (string= (buffer-name) (if foo-id "oofnet" "foonet")))
+        (funcall expect 5 "foonet")))
+
+    (ert-info ("#chan@foonet is clean, no cross-contamination")
+      (with-current-buffer chan-buf-foo
+        (erc-d-t-wait-for 3 (eq erc-server-process erc-server-process-foo))
+        (funcall expect 3 "<bob>")
+        (erc-d-t-absent-for 0.1 "<joe>")
+        (while (accept-process-output erc-server-process-foo))
+        (funcall expect 3 "not given me")))
+
+    (ert-info ("All #chan@barnet output received")
+      (with-current-buffer chan-buf-bar
+        (while (accept-process-output erc-server-process-bar))
+        (funcall expect 3 "hath an uncle here")))))
+
+(ert-deftest erc-scenarios-join-network-id--cmd-reconnect ()
+  (let ((connect (lambda ()
+                   (with-current-buffer "foonet"
+                     (erc-cmd-RECONNECT)
+                     (should (eq (current-buffer)
+                                 (process-buffer erc-server-process)))
+                     (current-buffer)))))
+    (erc-scenarios-common--join-network-id connect nil nil)))
+
+(ert-deftest erc-scenarios-join-network-id--cmd-reconnect-id ()
+  (let ((connect (lambda ()
+                   (with-current-buffer "oofnet"
+                     (erc-cmd-RECONNECT)
+                     (should (eq (current-buffer)
+                                 (process-buffer erc-server-process)))
+                     (current-buffer)))))
+    (erc-scenarios-common--join-network-id connect 'oofnet nil)))
+
+(ert-deftest erc-scenarios-join-network-id--cmd-reconnect-ids ()
+  (let ((connect (lambda ()
+                   (with-current-buffer "oofnet"
+                     (erc-cmd-RECONNECT)
+                     (should (eq (current-buffer)
+                                 (process-buffer erc-server-process)))
+                     (current-buffer)))))
+    (erc-scenarios-common--join-network-id connect 'oofnet 'rabnet)))
+
+(ert-deftest erc-scenarios-join-network-id--new-invocation ()
+  (let ((connect (lambda ()
+                   (erc :server "127.0.0.1"
+                        :port (with-current-buffer "foonet"
+                                (process-contact erc-server-process :service))
+                        :nick "tester"
+                        :password "foonet:changeme"
+                        :full-name "tester"))))
+    (erc-scenarios-common--join-network-id connect nil nil)))
+
+(ert-deftest erc-scenarios-join-network-id--new-invocation-id ()
+  (let ((connect (lambda ()
+                   (erc :server "127.0.0.1"
+                        :port (with-current-buffer "oofnet"
+                                (process-contact erc-server-process :service))
+                        :nick "tester"
+                        :password "foonet:changeme"
+                        :full-name "tester"
+                        :id 'oofnet))))
+    (erc-scenarios-common--join-network-id connect 'oofnet nil)))
+
+(ert-deftest erc-scenarios-join-network-id--new-invocation-ids ()
+  (let ((connect (lambda ()
+                   (erc :server "127.0.0.1"
+                        :port (with-current-buffer "oofnet"
+                                (process-contact erc-server-process :service))
+                        :nick "tester"
+                        :password "foonet:changeme"
+                        :full-name "tester"
+                        :id 'oofnet))))
+    (erc-scenarios-common--join-network-id connect 'oofnet 'rabnet)))
+
+;; Ensure the old way of specifying a partial domain name still works.
+
+(ert-deftest erc-scenarios-base-legacy-autojoin--announced ()
+  (erc-scenarios-common-with-cleanup
+      ((erc-scenarios-common-dialog "join/legacy")
+       (erc-d-linger-secs 1)
+       (erc-server-flood-penalty 0.1)
+       (dumb-server (erc-d-run "localhost" t 'foonet))
+       (port (process-contact dumb-server :service))
+       (erc-autojoin-channels-alist '(("libera\\.chat" "#erc")
+                                      ("foonet\\.org" "#chan"))))
+
+    (ert-info ("Connect")
+      (with-current-buffer (erc :server "127.0.0.1"
+                                :port port
+                                :nick "tester"
+                                :password "changeme"
+                                :full-name "tester")
+        (should (string= (buffer-name) (format "127.0.0.1:%d" port)))))
+
+    (erc-d-t-wait-for 1 (get-buffer "FooNet"))
+
+    (ert-info ("Channel buffer #chan autojoined")
+      (with-current-buffer (erc-d-t-wait-for 6 (get-buffer "#chan"))
+        (erc-d-t-search-for 10 "Live, and be prosperous")))))
+
+(ert-deftest erc-scenarios-join-reconnect ()
+  (erc-scenarios-common-with-cleanup
+      ((erc-scenarios-common-dialog "join/reconnect")
+       (dumb-server (erc-d-run "localhost" t 'foonet 'foonet-again))
+       (port (process-contact dumb-server :service))
+       (expect (erc-d-t-make-expecter))
+       (erc-server-flood-penalty 0.1)
+       (erc-server-auto-reconnect t)
+       erc-autojoin-channels-alist
+       erc-server-buffer)
+
+    (should (memq 'autojoin erc-modules))
+
+    (ert-info ("Connect to foonet")
+      (setq erc-server-buffer (erc :server "127.0.0.1"
+                                   :port port
+                                   :nick "tester"
+                                   :password "changeme"
+                                   :full-name "tester"))
+      (with-current-buffer erc-server-buffer
+        (should (string= (buffer-name) (format "127.0.0.1:%d" port)))
+        (funcall expect 1 "debug mode")))
+
+    (ert-info ("Wait for some output in channels")
+      (with-current-buffer (erc-d-t-wait-for 10 (get-buffer "#chan"))
+        (funcall expect 10 "welcome"))
+      (with-current-buffer (erc-d-t-wait-for 10 (get-buffer "#spam"))
+        (funcall expect 10 "welcome")))
+
+    (should (equal erc-autojoin-channels-alist '((FooNet "#spam" "#chan"))))
+
+    (ert-info ("Wait for auto reconnect")
+      (with-current-buffer erc-server-buffer
+        (funcall expect 10 "still in debug mode")))
+
+    (ert-info ("Wait for activity to recommence in channels")
+      (with-current-buffer (erc-d-t-wait-for 10 (get-buffer "#chan"))
+        (funcall expect 10 "forest of Arden"))
+      (with-current-buffer (erc-d-t-wait-for 10 (get-buffer "#spam"))
+        (funcall expect 10 "her elves come here anon")))))
+
 ;; Playback for same channel on two networks routed correctly.
 ;; Originally from Bug#48598: 28.0.50; buffer-naming collisions
 ;; involving bouncers in ERC.
@@ -1285,7 +1521,7 @@ collisions involving bouncers in ERC.  Run EXTRA."
       (with-current-buffer erc-server-buffer
         (funcall expect 10 "Connection failed!  Re-establishing")))
 
-    (should (equal erc-autojoin-channels-alist '(("foonet.org" "#chan"))))
+    (should (equal erc-autojoin-channels-alist '((FooNet "#chan"))))
 
     (funcall test)
 
