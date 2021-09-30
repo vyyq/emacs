@@ -1013,6 +1013,115 @@ collisions involving bouncers in ERC.  Run EXTRA."
         erc-reuse-buffers)
     (erc-scenarios-common--base-reuse-buffers-server-buffers)))
 
+;; This also asserts that `erc-cmd-JOIN' is no longer susceptible to a
+;; regression introduced in 28.1 (ERC 5.4) that caused phantom target
+;; buffers of the form target/server to be created via
+;; `switch-to-buffer' ("phantom" because they would go unused").  This
+;; would happen (in place of a JOIN being sent out) when a previously
+;; used (parted) target buffer existed and `erc-reuse-buffers' was
+;; nil.
+;;
+;; Note: All the `erc-get-channel-user' calls have to do with the fact
+;; that `erc-default-target' relies on the less-than-well-defined
+;; `erc-default-recipients' and is thus overloaded in the sense of
+;; being used both for retrieving a target name and checking if
+;; channel has been PARTed.  While not ideal, `erc-get-channel-user'
+;; can (also) be used to detect the latter.
+
+(defun erc-scenarios-common--base-reuse-buffers-channel-buffers ()
+  "The option `erc-reuse-buffers' is still respected when nil.
+Adapted from scenario clash-of-chans/uniquify described in Bug#48598:
+28.0.50; buffer-naming collisions involving bouncers in ERC."
+  (let ((expect (erc-d-t-make-expecter))
+        (server-process-bar (with-current-buffer "barnet" erc-server-process))
+        (server-process-foo (with-current-buffer "foonet" erc-server-process)))
+
+    (ert-info ("Unique #chan buffers exist")
+      (let ((chan-bufs (erc-scenarios-common-buflist "#chan"))
+            (names '("#chan@barnet" "#chan@foonet")))
+        (should (member (buffer-name (pop chan-bufs)) names))
+        (should (member (buffer-name (pop chan-bufs)) names))
+        (should-not chan-bufs)))
+
+    (ert-info ("#chan@foonet is exclusive and not contaminated")
+      (with-current-buffer "#chan@foonet"
+        (funcall expect 1 "<bob>")
+        (erc-d-t-absent-for 0.1 "<joe>")
+        (funcall expect 1 "strength to climb")
+        (should (eq erc-server-process server-process-foo))))
+
+    (ert-info ("#chan@barnet is exclusive and not contaminated")
+      (with-current-buffer "#chan@barnet"
+        (funcall expect 1 "<joe>")
+        (erc-d-t-absent-for 0.1 "<bob>")
+        (funcall expect 1 "the loudest noise")
+        (should (eq erc-server-process server-process-bar))))
+
+    (ert-info ("Part #chan@foonet")
+      (with-current-buffer "#chan@foonet"
+        (erc-d-t-search-for 1 "shake my sword")
+        (erc-cmd-PART "#chan")
+        (funcall expect 3 "You have left channel #chan")
+        (erc-cmd-JOIN "#chan")))
+
+    (ert-info ("Part #chan@barnet")
+      (with-current-buffer "#chan@barnet"
+        (funcall expect 3 "Arm it in rags")
+        (should (erc-get-channel-user (erc-current-nick)))
+        (erc-cmd-PART "#chan")
+        (funcall expect 3 "You have left channel #chan")
+        (should-not (erc-get-channel-user (erc-current-nick)))
+        (erc-cmd-JOIN "#chan")))
+
+    (erc-d-t-wait-for 3 "New unique target buffer for #chan@foonet created"
+      (get-buffer "#chan@foonet<2>"))
+
+    (ert-info ("Activity continues in new, <n>-suffixed #chan@foonet buffer")
+      (with-current-buffer "#chan@foonet"
+        (should-not (erc-get-channel-user (erc-current-nick))))
+      (with-current-buffer "#chan@foonet<2>"
+        (should (erc-get-channel-user (erc-current-nick)))
+        (funcall expect 2 "You have joined channel #chan")
+        (funcall expect 2 "#chan was created on")
+        (funcall expect 2 "<alice>")
+        (should (eq erc-server-process server-process-foo))
+        (erc-d-t-absent-for 0.2 "<joe>")))
+
+    (erc-d-t-wait-for 3 "New unique target buffer for #chan@barnet created"
+      (get-buffer "#chan@barnet<2>"))
+
+    (ert-info ("Activity continues in new, <n>-suffixed #chan@barnet buffer")
+      (with-current-buffer "#chan@barnet"
+        (should-not (erc-get-channel-user (erc-current-nick))))
+      (with-current-buffer "#chan@barnet<2>"
+        (funcall expect 2 "You have joined channel #chan")
+        (funcall expect 1 "Users on #chan: @mike joe tester")
+        (funcall expect 2 "<mike>")
+        (should (eq erc-server-process server-process-bar))
+        (erc-d-t-absent-for 0.2 "<bob>")))
+
+    (ert-info ("Two new chans created for a total of four")
+      (let* ((bufs (erc-scenarios-common-buflist "#chan"))
+             (names (sort (mapcar #'buffer-name bufs) #'string<)))
+        (should (equal names '("#chan@barnet" "#chan@barnet<2>"
+                               "#chan@foonet" "#chan@foonet<2>")))))
+
+    (ert-info ("All output sent")
+      (with-current-buffer "#chan@foonet<2>"
+        (while (accept-process-output server-process-foo))
+        (funcall expect 3 "most lively"))
+      (with-current-buffer "#chan@barnet<2>"
+        (while (accept-process-output server-process-bar))
+        (funcall expect 3 "soul black")))))
+
+(ert-deftest erc-scenarios-base-reuse-buffers-channel-buffers--disabled ()
+  (should erc-reuse-buffers)
+  (let ((erc-scenarios-common-dialog "base/reuse-buffers/channel-buffers")
+        (erc-server-flood-penalty 0.1)
+        erc-reuse-buffers)
+    (erc-scenarios-common--base-reuse-buffers-server-buffers
+     #'erc-scenarios-common--base-reuse-buffers-channel-buffers)))
+
 ;; The server changes your nick just after registration.
 
 (ert-deftest erc-scenarios-base-renick-self-auto ()
