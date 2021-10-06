@@ -399,6 +399,30 @@
       (should (= hooked 2))))
   (should-not (cadr erc-server-005-functions)))
 
+(ert-deftest erc-downcase ()
+  (let ((erc--isupport-params (make-hash-table)))
+
+    (puthash 'PREFIX '("(ov)@+") erc--isupport-params)
+    (puthash 'BOT '("B") erc--isupport-params)
+
+    (ert-info ("ascii")
+      (puthash 'CASEMAPPING  '("ascii") erc--isupport-params)
+      (should (equal (erc-downcase "Bob[m]`") "bob[m]`"))
+      (should (equal (erc-downcase "Tilde~") "tilde~" ))
+      (should (equal (erc-downcase "\\O/") "\\o/" )))
+
+    (ert-info ("rfc1459")
+      (puthash 'CASEMAPPING  '("rfc1459") erc--isupport-params)
+      (should (equal (erc-downcase "Bob[m]`") "bob{m}`" ))
+      (should (equal (erc-downcase "Tilde~") "tilde^" ))
+      (should (equal (erc-downcase "\\O/") "|o/" )))
+
+    (ert-info ("rfc1459-strict")
+      (puthash 'CASEMAPPING  '("rfc1459-strict") erc--isupport-params)
+      (should (equal (erc-downcase "Bob[m]`") "bob{m}`"))
+      (should (equal (erc-downcase "Tilde~") "tilde~" ))
+      (should (equal (erc-downcase "\\O/") "|o/" )))))
+
 (ert-deftest erc-ring-previous-command-base-case ()
   (ert-info ("Create ring when nonexistent and do nothing")
     (let (erc-input-ring
