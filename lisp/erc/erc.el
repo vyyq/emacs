@@ -1886,6 +1886,18 @@ all channel buffers on all servers."
 
 ;; Some local variables
 
+;; TODO eventually deprecate this variable
+;;
+;; In the ancient, pre-CVS days (prior to June 2001), this list may
+;; have been used for supporting the changing of a buffer's target on
+;; the fly (mid-session).  Such usage, which allowed cons cells like
+;; (QUERY . bob) to serve as the list's head, was either never fully
+;; integrated or was partially clobbered prior to the introduction of
+;; version control.  But vestiges remain (see `erc-dcc-chat-mode').
+;;
+;; New library code should use the `erc--target' struct instead.
+;; Third-party code can continue to use this until a getter for
+;; `erc--target' (or whatever replaces it) is exported.
 (defvar-local erc-default-recipients nil
   "List of default recipients of the current buffer.")
 
@@ -5847,6 +5859,27 @@ See also `erc-downcase'."
 
 ;; default target handling
 
+(defun erc--current-buffer-joined-p ()
+  "Return whether the current target buffer is joined."
+  ;; This may be a reliable means of detecting subscription status,
+  ;; but it's also roundabout and awkward.  Perhaps it's worth
+  ;; discussing adding a joined slot to `erc--target' for this.
+  (cl-assert erc--target)
+  (and (erc--target-channel-p erc--target)
+       (erc-get-channel-user (erc-current-nick)) t))
+
+;; This function happens to return nil in channel buffers previously
+;; parted or those from which a user had been kicked.  While this
+;; "works" for detecting whether a channel is currently subscribed to,
+;; new code should consider using
+;;
+;;   (erc-get-channel-user (erc-current-nick))
+;;
+;; instead.  For retrieving a target regardless of subscription or
+;; connection status, use replacements based on `erc--target'.
+;; (Coming soon.)
+;;
+;; TODO deprecate this
 (defun erc-default-target ()
   "Return the current default target (as a character string) or nil if none."
   (let ((tgt (car erc-default-recipients)))
@@ -5857,12 +5890,14 @@ See also `erc-downcase'."
 
 (defun erc-add-default-channel (channel)
   "Add CHANNEL to the default channel list."
+  (declare (obsolete "use `erc-cmd-JOIN' or similar instead" "29.1"))
   (let ((chl (downcase channel)))
     (setq erc-default-recipients
           (cons chl erc-default-recipients))))
 
 (defun erc-delete-default-channel (channel &optional buffer)
   "Delete CHANNEL from the default channel list."
+  (declare (obsolete "use `erc-cmd-PART' or similar instead" "29.1"))
   (with-current-buffer (if (and buffer
                                 (bufferp buffer))
                            buffer
@@ -5874,6 +5909,7 @@ See also `erc-downcase'."
   "Add QUERY'd NICKNAME to the default channel list.
 
 The previous default target of QUERY type gets removed."
+  (declare (obsolete "use `erc-cmd-QUERY' or similar instead" "29.1"))
   (let ((d1 (car erc-default-recipients))
         (d2 (cdr erc-default-recipients))
         (qt (cons 'QUERY (downcase nickname))))
@@ -5884,7 +5920,7 @@ The previous default target of QUERY type gets removed."
 
 (defun erc-delete-query ()
   "Delete the topmost target if it is a QUERY."
-
+  (declare (obsolete "use one query buffer per target instead" "29.1"))
   (let ((d1 (car erc-default-recipients))
         (d2 (cdr erc-default-recipients)))
     (if (and (listp d1)
