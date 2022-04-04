@@ -149,6 +149,91 @@
         (apply #'start-process (car args) (current-buffer) args))
   (set-process-query-on-exit-flag erc-server-process nil))
 
+(ert-deftest erc-hide-prompt ()
+  (let (erc-kill-channel-hook erc-kill-server-hook erc-kill-buffer-hook)
+
+    (with-current-buffer (get-buffer-create "ServNet")
+      (erc-tests--send-prep)
+      (goto-char erc-insert-marker)
+      (should (looking-at-p (regexp-quote erc-prompt)))
+      (erc-tests--set-fake-server-process "sleep" "1")
+      (set-process-sentinel erc-server-process #'ignore)
+      (setq erc-network 'ServNet)
+      (set-process-query-on-exit-flag erc-server-process nil))
+
+    (with-current-buffer (get-buffer-create "#chan")
+      (erc-tests--send-prep)
+      (goto-char erc-insert-marker)
+      (should (looking-at-p (regexp-quote erc-prompt)))
+      (setq erc-server-process (buffer-local-value 'erc-server-process
+                                                   (get-buffer "ServNet"))
+            erc-default-recipients '("#chan")))
+
+    (ert-info ("Value: t (default)")
+      (should (eq erc-hide-prompt t))
+      (with-current-buffer "ServNet"
+        (should (= (point) erc-insert-marker))
+        (erc--hide-prompt erc-server-process)
+        (should (string= ">" (get-text-property (point) 'display))))
+
+      (with-current-buffer "#chan"
+        (goto-char erc-insert-marker)
+        (should (string= ">" (get-text-property (point) 'display)))
+        (should (memq #'erc--unhide-prompt-on-self-insert pre-command-hook))
+        (goto-char erc-input-marker)
+        (ert-simulate-command '(self-insert-command 1 ?/))
+        (goto-char erc-insert-marker)
+        (should-not (get-text-property (point) 'display))
+        (should-not (memq #'erc--unhide-prompt-on-self-insert
+                          pre-command-hook)))
+
+      (with-current-buffer "ServNet"
+        (should (get-text-property erc-insert-marker 'display))
+        (should (memq #'erc--unhide-prompt-on-self-insert pre-command-hook))
+        (erc--unhide-prompt)
+        (should-not (memq #'erc--unhide-prompt-on-self-insert
+                          pre-command-hook))
+        (should-not (get-text-property erc-insert-marker 'display))))
+
+    (ert-info ("Value: server")
+      (setq erc-hide-prompt 'server)
+      (with-current-buffer "ServNet"
+        (erc--hide-prompt erc-server-process)
+        (should (string= ">" (get-text-property erc-insert-marker 'display))))
+
+      (with-current-buffer "#chan"
+        (should-not (get-text-property erc-insert-marker 'display)))
+
+      (with-current-buffer "ServNet"
+        (erc--unhide-prompt)
+        (should-not (get-text-property erc-insert-marker 'display))))
+
+    (ert-info ("Value: target")
+      (setq erc-hide-prompt 'target)
+      (with-current-buffer "ServNet"
+        (erc--hide-prompt erc-server-process)
+        (should-not (get-text-property erc-insert-marker 'display)))
+
+      (with-current-buffer "#chan"
+        (should (string= ">" (get-text-property erc-insert-marker 'display)))
+        (erc--unhide-prompt)
+        (should-not (get-text-property erc-insert-marker 'display))))
+
+    (ert-info ("Value: nil")
+      (setq erc-hide-prompt nil)
+      (with-current-buffer "ServNet"
+        (erc--hide-prompt erc-server-process)
+        (should-not (get-text-property erc-insert-marker 'display)))
+
+      (with-current-buffer "#chan"
+        (should-not (get-text-property erc-insert-marker 'display))
+        (erc--unhide-prompt) ; won't blow up when prompt already showing
+        (should-not (get-text-property erc-insert-marker 'display))))
+
+    (when noninteractive
+      (kill-buffer "#chan")
+      (kill-buffer "ServNet"))))
+
 (ert-deftest erc--switch-to-buffer ()
   (defvar erc-modified-channels-alist) ; lisp/erc/erc-track.el
 
