@@ -135,6 +135,20 @@
     (should (get-buffer "#spam"))
     (kill-buffer "#spam")))
 
+(defun erc-tests--send-prep ()
+  (erc-mode)
+  (insert "\n\n")
+  (setq erc-input-marker (make-marker)
+        erc-insert-marker (make-marker))
+  (set-marker erc-insert-marker (point-max))
+  (erc-display-prompt)
+  (should (= (point) erc-input-marker)))
+
+(defun erc-tests--set-fake-server-process (&rest args)
+  (setq erc-server-process
+        (apply #'start-process (car args) (current-buffer) args))
+  (set-process-query-on-exit-flag erc-server-process nil))
+
 (ert-deftest erc--switch-to-buffer ()
   (defvar erc-modified-channels-alist) ; lisp/erc/erc-track.el
 
@@ -218,14 +232,10 @@
 (ert-deftest erc-ring-previous-command ()
   (with-current-buffer (get-buffer-create "*#fake*")
     (erc-mode)
-    (insert "\n\n")
+    (erc-tests--send-prep)
+    (setq-local erc-last-input-time 0)
     (should-not (local-variable-if-set-p 'erc-send-completed-hook))
     (set (make-local-variable 'erc-send-completed-hook) nil) ; skip t (globals)
-    (setq erc-input-marker (make-marker)
-          erc-insert-marker (make-marker))
-    (set-marker erc-insert-marker (point-max))
-    (erc-display-prompt)
-    (should (= (point) erc-input-marker))
     ;; Just in case erc-ring-mode is already on
     (setq-local erc-pre-send-functions nil)
     (add-hook 'erc-pre-send-functions #'erc-add-to-input-ring)
