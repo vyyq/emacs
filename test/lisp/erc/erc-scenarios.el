@@ -2141,11 +2141,10 @@ Adapted from scenario clash-of-chans/uniquify described in Bug#48598:
 
 (ert-deftest erc-scenarios-services-password ()
 
-  (require 'erc-services)
+  (defvar erc-nickserv-passwords) ; <- FIXME what is this?
 
   (erc-scenarios-common-with-cleanup
       ((erc-scenarios-common-dialog "services/password")
-       (inhibit-interaction t)
        (erc-server-flood-penalty 0.1)
        (erc-modules (cons 'services erc-modules))
        (erc-nickserv-passwords '((Libera.Chat (("joe" . "bar")
@@ -2162,7 +2161,7 @@ Adapted from scenario clash-of-chans/uniquify described in Bug#48598:
         (should (string= (buffer-name) (format "127.0.0.1:%d" port)))
         (erc-d-t-wait-for 2 (eq erc-network 'Libera.Chat))
         (funcall expect 1 "This nickname is registered.")
-        (funcall expect 2 "You are now identified")
+        (funcall expect 1 "You are now identified")
         (funcall expect 1 "Last login from")
         (erc-cmd-QUIT "")))
 
