@@ -72,7 +72,8 @@
 
 (require 'erc-d)
 (require 'erc-scenarios-common)
-(require 'erc-backend)
+(require 'erc)
+(eval-when-compile (require 'erc-services))
 
 (declare-function erc-network-name "erc-networks")
 (declare-function erc-network "erc-networks")
@@ -2141,8 +2142,6 @@ Adapted from scenario clash-of-chans/uniquify described in Bug#48598:
 
 (ert-deftest erc-scenarios-services-password ()
 
-  (defvar erc-nickserv-passwords) ; <- FIXME what is this?
-
   (erc-scenarios-common-with-cleanup
       ((erc-scenarios-common-dialog "services/password")
        (erc-server-flood-penalty 0.1)
@@ -2173,6 +2172,7 @@ Adapted from scenario clash-of-chans/uniquify described in Bug#48598:
   (erc-scenarios-common-with-cleanup
       ((erc-scenarios-common-dialog "services/password")
        (erc-server-flood-penalty 0.1)
+       (inhibit-interaction nil)
        (erc-modules (cons 'services erc-modules))
        (expect (erc-d-t-make-expecter))
        (dumb-server (erc-d-run "localhost" t 'libera))

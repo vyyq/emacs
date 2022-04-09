@@ -71,6 +71,7 @@
                        (quit . ,(erc-quit/part-reason-default))
                        (erc-version . ,erc-version)))
     (erc-modules (copy-sequence erc-modules))
+    (inhibit-interaction t)
     (auth-source-do-cache nil)
     (erc-autojoin-channels-alist nil)
     (erc-server-auto-reconnect nil)
