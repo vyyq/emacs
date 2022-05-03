@@ -113,7 +113,7 @@ default:
         - lib/malloc/*.{h,c}
         - lisp/emacs-lisp/*.el
         - src/*.{h,c}
-        - test/infra/*
+        # - test/infra/*
     - changes:
         # gfilemonitor, kqueue
         - src/gfilenotify.c
