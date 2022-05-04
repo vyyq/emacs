@@ -740,7 +740,7 @@ MATCHER is used to find a corresponding network to a server while
 ;; This relationship is quasi-permanent and transcends IRC connections
 ;; and Emacs sessions.  As of early 2022, whether a user is
 ;; authenticated (logged in to an account) remains orthogonal to their
-;; network identity from a client's perspective. ERC must be equipped
+;; network identity from a client's perspective.  ERC must be equipped
 ;; to adapt should this ever change.
 ;;
 ;; While a connection is normally associated with exactly one nick,
@@ -762,7 +762,7 @@ Here, \"presence\" refers to some local state representing a persistent
 existence on a network.  The management of this state involves tracking
 associated buffers and what they're displaying.  Since a presence can
 outlast physical connections and survive changes in back-end transports
-\(and even outlive Emacs sessions), its identity must remain resilient.
+\(and even outlive Emacs sessions), its identity must be resilient.
 
 Essential to this notion of an enduring existence on a network is
 ensuring recovery from the loss of a server buffer.  Thus, any useful
@@ -792,18 +792,19 @@ set of connection parameters.  See the constructor
                               (len 1))))
   "A network presence identified by certain connection parameters.
 Two identifiers are considered equivalent when their non-empty `parts'
-slots compare equal.  Identifiers sharing a common prefix of `parts' are
-considered related.  An identifier's canonical ID is determined by
-concatenating the shortest prefix (non-empty initial substring of
-`parts') unique among those of its relatives.  For example, related
-presences [b a r d o] and [b a z a r] would have IDs b/a/r and b/a/z
-respectively.  The separator is given by `erc-networks--id-sep'."
+slots compare equal.  Related identifiers share a common prefix of
+`parts' taken from connection parameters (given or discovered).  An
+identifier's unique `symbol', intended for display purposes, is created
+by concatenating the shortest common prefix among its relatives.  For
+example, related presences [b a r d o] and [b a z a r] would have IDs
+b/a/r and b/a/z respectively.  The separator is given by
+`erc-networks--id-sep'."
   (parts nil :type sequence ; a vector of atoms
          :documentation "Sequence of identifying components.")
   (len 0 :type integer
        :documentation "Length of active `parts' interval."))
 
-;; Please use this instead of `erc-networks--id-fixed-p'.
+;; For now, please use this instead of `erc-networks--id-fixed-p'.
 (cl-defgeneric erc-networks--id-given (net-id)
   "Return the preassigned identifier for a network presence, if any.
 This may have come in the form of an :id arg to an \"entry-point\"
@@ -909,7 +910,7 @@ them with string separator `erc-networks--id-sep'."
          (erc-networks--id-telescopic-parts nid))))
 
 (defun erc-networks--id-telescopic-prefix-length (nid-a nid-b)
-  "Return length of common initial prefix of NID-a and NID-B.
+  "Return length of common initial prefix of NID-A and NID-B.
 Return nil when no such sequence exists (instead of zero)."
   (when-let* ((a (erc-networks--id-telescopic-parts nid-a))
               (b (erc-networks--id-telescopic-parts nid-b))

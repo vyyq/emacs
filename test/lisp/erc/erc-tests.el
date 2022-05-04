@@ -169,6 +169,14 @@
                                                    (get-buffer "ServNet"))
             erc-default-recipients '("#chan")))
 
+    (with-current-buffer (get-buffer-create "bob")
+      (erc-tests--send-prep)
+      (goto-char erc-insert-marker)
+      (should (looking-at-p (regexp-quote erc-prompt)))
+      (setq erc-server-process (buffer-local-value 'erc-server-process
+                                                   (get-buffer "ServNet"))
+            erc-default-recipients '("bob")))
+
     (ert-info ("Value: t (default)")
       (should (eq erc-hide-prompt t))
       (with-current-buffer "ServNet"
@@ -177,6 +185,17 @@
         (should (string= ">" (get-text-property (point) 'display))))
 
       (with-current-buffer "#chan"
+        (goto-char erc-insert-marker)
+        (should (string= ">" (get-text-property (point) 'display)))
+        (should (memq #'erc--unhide-prompt-on-self-insert pre-command-hook))
+        (goto-char erc-input-marker)
+        (ert-simulate-command '(self-insert-command 1 ?/))
+        (goto-char erc-insert-marker)
+        (should-not (get-text-property (point) 'display))
+        (should-not (memq #'erc--unhide-prompt-on-self-insert
+                          pre-command-hook)))
+
+      (with-current-buffer "bob"
         (goto-char erc-insert-marker)
         (should (string= ">" (get-text-property (point) 'display)))
         (should (memq #'erc--unhide-prompt-on-self-insert pre-command-hook))
@@ -196,7 +215,7 @@
         (should-not (get-text-property erc-insert-marker 'display))))
 
     (ert-info ("Value: server")
-      (setq erc-hide-prompt 'server)
+      (setq erc-hide-prompt '(server))
       (with-current-buffer "ServNet"
         (erc--hide-prompt erc-server-process)
         (should (string= ">" (get-text-property erc-insert-marker 'display))))
@@ -204,14 +223,20 @@
       (with-current-buffer "#chan"
         (should-not (get-text-property erc-insert-marker 'display)))
 
+      (with-current-buffer "bob"
+        (should-not (get-text-property erc-insert-marker 'display)))
+
       (with-current-buffer "ServNet"
         (erc--unhide-prompt)
         (should-not (get-text-property erc-insert-marker 'display))))
 
-    (ert-info ("Value: target")
-      (setq erc-hide-prompt 'target)
+    (ert-info ("Value: channel")
+      (setq erc-hide-prompt '(channel))
       (with-current-buffer "ServNet"
         (erc--hide-prompt erc-server-process)
+        (should-not (get-text-property erc-insert-marker 'display)))
+
+      (with-current-buffer "bob"
         (should-not (get-text-property erc-insert-marker 'display)))
 
       (with-current-buffer "#chan"
@@ -219,10 +244,27 @@
         (erc--unhide-prompt)
         (should-not (get-text-property erc-insert-marker 'display))))
 
+    (ert-info ("Value: query")
+      (setq erc-hide-prompt '(query))
+      (with-current-buffer "ServNet"
+        (erc--hide-prompt erc-server-process)
+        (should-not (get-text-property erc-insert-marker 'display)))
+
+      (with-current-buffer "bob"
+        (should (string= ">" (get-text-property erc-insert-marker 'display)))
+        (erc--unhide-prompt)
+        (should-not (get-text-property erc-insert-marker 'display)))
+
+      (with-current-buffer "#chan"
+        (should-not (get-text-property erc-insert-marker 'display))))
+
     (ert-info ("Value: nil")
       (setq erc-hide-prompt nil)
       (with-current-buffer "ServNet"
         (erc--hide-prompt erc-server-process)
+        (should-not (get-text-property erc-insert-marker 'display)))
+
+      (with-current-buffer "bob"
         (should-not (get-text-property erc-insert-marker 'display)))
 
       (with-current-buffer "#chan"
@@ -232,6 +274,7 @@
 
     (when noninteractive
       (kill-buffer "#chan")
+      (kill-buffer "bob")
       (kill-buffer "ServNet"))))
 
 (ert-deftest erc--switch-to-buffer ()
@@ -423,17 +466,17 @@
       (should (equal (erc-downcase "Tilde~") "tilde~" ))
       (should (equal (erc-downcase "\\O/") "|o/" )))))
 
-(ert-deftest erc-local-channel-p ()
+(ert-deftest erc--valid-local-channel-p ()
   (ert-info ("Local channels not supported")
     (let ((erc--isupport-params (make-hash-table)))
       (puthash 'CHANTYPES  '("#") erc--isupport-params)
-      (should-not (erc-valid-local-channel-p "#chan"))
-      (should-not (erc-valid-local-channel-p "&local"))))
+      (should-not (erc--valid-local-channel-p "#chan"))
+      (should-not (erc--valid-local-channel-p "&local"))))
   (ert-info ("Local channels supported")
     (let ((erc--isupport-params (make-hash-table)))
       (puthash 'CHANTYPES  '("&#") erc--isupport-params)
-      (should-not (erc-valid-local-channel-p "#chan"))
-      (should (erc-valid-local-channel-p "&local")))))
+      (should-not (erc--valid-local-channel-p "#chan"))
+      (should (erc--valid-local-channel-p "&local")))))
 
 (ert-deftest erc--target-from-string ()
   (should (equal (erc--target-from-string "#chan")

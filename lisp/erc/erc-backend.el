@@ -479,7 +479,7 @@ If POS is out of range, the value is nil."
 (defun erc-bounds-of-word-at-point ()
   "Return the bounds of word at point, or nil if we're not at a word.
 If no `subword-mode' is active, then this is
-\(bounds-of-thing-at-point 'word)."
+\(bounds-of-thing-at-point \\='word)."
   (if (or (erc-word-at-arg-p (point))
           (erc-word-at-arg-p (1- (point))))
       (save-excursion
@@ -732,14 +732,20 @@ Conditionally try to reconnect and take appropriate action."
   (erc-with-all-buffers-of-server
       proc nil ; sorta wish this was indent 2
       (when (and erc-hide-prompt
-                 (memq erc-hide-prompt
-                       (list t (if (erc-default-target) 'target 'server)))
+                 (or (eq erc-hide-prompt t)
+                     ;; FIXME use `erc--target' after bug#48598
+                     (memq (if (erc-default-target)
+                               (if (erc-channel-p (car erc-default-recipients))
+                                   'channel
+                                 'query)
+                             'server)
+                           erc-hide-prompt))
                  (marker-position erc-insert-marker)
                  (marker-position erc-input-marker)
                  (get-text-property erc-insert-marker 'erc-prompt))
         (with-silent-modifications
-          (add-text-properties erc-insert-marker
-                               erc-input-marker `(display ,erc-prompt-hidden)))
+          (add-text-properties erc-insert-marker (1- erc-input-marker)
+                               `(display ,erc-prompt-hidden)))
         (add-hook 'pre-command-hook #'erc--unhide-prompt-on-self-insert 0 t))))
 
 (defun erc-process-sentinel (cproc event)

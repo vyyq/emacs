@@ -19,108 +19,181 @@
 
 ;;; Commentary:
 
-;; For convenience, some tests involving core auth-source
-;; functionality have been stashed here for the time being.
+;; TODO: move the auth-source tests somewhere else.  They've been
+;; stashed here for pragmatic reasons.
 
 ;;; Code:
 
 (require 'ert-x)
 (require 'erc-services)
 (require 'erc-compat)
+(require 'secrets)
 
 ;;;; Core auth-source
 
+(ert-deftest erc-auth-source-determine-params-merge ()
+  (let ((erc-session-server "irc.gnu.org")
+        (erc-server-announced-name "my.gnu.org")
+        (erc-session-port 6697)
+        (erc-network 'fake)
+        (erc-server-current-nick "tester")
+        (erc-networks--id (erc-networks--id-create 'GNU.chat)))
+
+    (should (equal (erc-auth-source-determine-params-merge)
+                   '(:host ("GNU.chat" "my.gnu.org" "irc.gnu.org")
+                           :port ("6697" "irc")
+                           :require (:secret))))
+
+    (should (equal (erc-auth-source-determine-params-merge :host "fake")
+                   '(:host ("fake" "GNU.chat" "my.gnu.org" "irc.gnu.org")
+                           :port ("6697" "irc")
+                           :require (:secret))))
+
+    (should (equal (erc-auth-source-determine-params-merge
+                    :host '("fake") :require :host)
+                   '(:host ("fake" "GNU.chat" "my.gnu.org" "irc.gnu.org")
+                           :require (:host :secret)
+                           :port ("6697" "irc"))))
+
+    (should (equal (erc-auth-source-determine-params-merge
+                    :host '("fake" "GNU.chat") :port "1234" :x "x")
+                   '(:host ("fake" "GNU.chat" "my.gnu.org" "irc.gnu.org")
+                           :port ("1234" "6697" "irc")
+                           :x ("x")
+                           :require (:secret))))))
+
 ;; Some of the following may be related to bug#23438.
 
-(defvar erc-join-tests--auth-source-entries
+(defun erc-services-tests--auth-source-standard (search)
+  (let ((filter #'erc-auth-source-determine-params-merge))
+
+    (ert-info ("Session wins")
+      (let ((erc-session-server "irc.gnu.org")
+            (erc-server-announced-name "my.gnu.org")
+            (erc-session-port 6697)
+            (erc-network 'fake)
+            (erc-server-current-nick "tester")
+            (erc-networks--id (erc-networks--id-create 'GNU.chat)))
+        (should-not (funcall search))
+        (should (string= (apply search (funcall filter :user "#chan"))
+                         "foo"))))
+
+    (ert-info ("Network wins")
+      (let* ((erc-session-server "irc.gnu.org")
+             (erc-server-announced-name "my.gnu.org")
+             (erc-session-port 6697)
+             (erc-network 'GNU.chat)
+             (erc-server-current-nick "tester")
+             (erc-networks--id (erc-networks--id-create nil)))
+        (should (string= (apply search (funcall filter :user "#chan"))
+                         "foo"))))
+
+    (ert-info ("Announced wins")
+      (let ((erc-session-server "irc.gnu.org")
+            (erc-server-announced-name "my.gnu.org")
+            (erc-session-port 6697)
+            erc-network
+            (erc-networks--id (erc-networks--id-create nil)))
+        (should (string= (apply search (funcall filter :user "#chan"))
+                         "baz"))))))
+
+(defun erc-services-tests--auth-source-announced (search)
+  (let* ((erc--isupport-params (make-hash-table))
+         (erc-server-parameters '(("CHANTYPES" . "&#")))
+         (erc--target (erc--target-from-string "&chan"))
+         (filter #'erc-auth-source-determine-params-merge))
+
+    (ert-info ("Announced prioritized")
+
+      (ert-info ("Announced wins")
+        (let* ((erc-session-server "irc.gnu.org")
+               (erc-server-announced-name "my.gnu.org")
+               (erc-session-port 6697)
+               (erc-network 'GNU.chat)
+               (erc-server-current-nick "tester")
+               (erc-networks--id (erc-networks--id-create nil)))
+          (should (string= (apply search (funcall filter :user "#chan"))
+                           "baz"))))
+
+      (ert-info ("Peer next")
+        (let* ((erc-server-announced-name "irc.gnu.org")
+               (erc-session-port 6697)
+               (erc-network 'GNU.chat)
+               (erc-server-current-nick "tester")
+               (erc-networks--id (erc-networks--id-create nil)))
+          (should (string= (apply search (funcall filter :user "#chan"))
+                           "bar"))))
+
+      (ert-info ("Network used as fallback")
+        (let* ((erc-session-port 6697)
+               (erc-network 'GNU.chat)
+               (erc-server-current-nick "tester")
+               (erc-networks--id (erc-networks--id-create nil)))
+          (should (string= (apply search (funcall filter :user "#chan"))
+                           "foo")))))))
+
+(defun erc-services-tests--auth-source-overrides (search)
+  (let* ((erc-session-server "irc.gnu.org")
+         (erc-server-announced-name "my.gnu.org")
+         (erc-network 'GNU.chat)
+         (erc-server-current-nick "tester")
+         (erc-networks--id (erc-networks--id-create nil))
+         (erc-session-port 6667)
+         (filter #'erc-auth-source-determine-params-merge))
+
+    (ert-info ("Specificity and overrides")
+
+      (ert-info ("More specific port")
+        (let ((erc-session-port 6697))
+          (should (string= (apply search (funcall filter :user "#chan"))
+                           "spam"))))
+
+      (ert-info ("More specific user (network loses)")
+        (should (string= (apply search (funcall filter :user '("#fsf")))
+                         "42")))
+
+      (ert-info ("Actual override")
+        (should (string= (apply search (funcall filter :port "6667"))
+                         "sesame")))
+
+      (ert-info ("Overrides don't interfere with post-processing")
+        (should (string= (apply search (funcall filter :host "MyHost"))
+                         "123"))))))
+
+;; auth-source netrc backend
+
+(defvar erc-services-tests--auth-source-entries
   '("machine irc.gnu.org port irc user \"#chan\" password bar"
     "machine my.gnu.org port irc user \"#chan\" password baz"
     "machine GNU.chat port irc user \"#chan\" password foo"))
 
 (defun erc-services-tests--auth-source-shuffle (&rest extra)
-  (string-join `(,@(sort (append erc-join-tests--auth-source-entries extra)
+  (string-join `(,@(sort (append erc-services-tests--auth-source-entries extra)
                          (lambda (&rest _) (zerop (random 2))))
                  "")
                "\n"))
 
-(ert-deftest erc--auth-source-search--standard ()
+(ert-deftest erc--auth-source-search--netrc-standard ()
   (ert-with-temp-file netrc-file
     :prefix "erc--auth-source-search--standard"
     :text (erc-services-tests--auth-source-shuffle)
+
     (let ((auth-sources (list netrc-file))
           (auth-source-do-cache nil))
+      (erc-services-tests--auth-source-standard
+       #'erc--auth-source-search))))
 
-      (ert-info ("Normal ordering")
-
-        (ert-info ("Session wins")
-          (let ((erc-session-server "irc.gnu.org")
-                (erc-server-announced-name "my.gnu.org")
-                (erc-session-port 6697)
-                (erc-network 'fake)
-                (erc-server-current-nick "tester")
-                (erc-networks--id (erc-networks--id-create 'GNU.chat)))
-            (should (string= (erc--auth-source-search :user "#chan")
-                             "foo"))))
-
-        (ert-info ("Network wins")
-          (let* ((erc-session-server "irc.gnu.org")
-                 (erc-server-announced-name "my.gnu.org")
-                 (erc-session-port 6697)
-                 (erc-network 'GNU.chat)
-                 (erc-server-current-nick "tester")
-                 (erc-networks--id (erc-networks--id-create nil)))
-            (should (string= (erc--auth-source-search :user "#chan")
-                             "foo"))))
-
-        (ert-info ("Announced wins")
-          (let ((erc-session-server "irc.gnu.org")
-                (erc-server-announced-name "my.gnu.org")
-                (erc-session-port 6697)
-                erc-network
-                (erc-networks--id (erc-networks--id-create nil)))
-            (should (string= (erc--auth-source-search :user "#chan")
-                             "baz"))))))))
-
-(ert-deftest erc--auth-source-search--announced ()
+(ert-deftest erc--auth-source-search--netrc-announced ()
   (ert-with-temp-file netrc-file
     :prefix "erc--auth-source-search--announced"
     :text (erc-services-tests--auth-source-shuffle)
-    (let* ((auth-sources (list netrc-file))
-           (auth-source-do-cache nil)
-           (erc--isupport-params (make-hash-table))
-           (erc-server-parameters '(("CHANTYPES" . "&#")))
-           (erc--target (erc--target-from-string "&chan")))
 
-      (ert-info ("Announced prioritized")
+    (let ((auth-sources (list netrc-file))
+          (auth-source-do-cache nil))
+      (erc-services-tests--auth-source-announced
+       #'erc--auth-source-search))))
 
-        (ert-info ("Announced wins")
-          (let* ((erc-session-server "irc.gnu.org")
-                 (erc-server-announced-name "my.gnu.org")
-                 (erc-session-port 6697)
-                 (erc-network 'GNU.chat)
-                 (erc-server-current-nick "tester")
-                 (erc-networks--id (erc-networks--id-create nil)))
-            (should (string= (erc--auth-source-search :user "#chan")
-                             "baz"))))
-
-        (ert-info ("Peer next")
-          (let* ((erc-server-announced-name "irc.gnu.org")
-                 (erc-session-port 6697)
-                 (erc-network 'GNU.chat)
-                 (erc-server-current-nick "tester")
-                 (erc-networks--id (erc-networks--id-create nil)))
-            (should (string= (erc--auth-source-search :user "#chan")
-                             "bar"))))
-
-        (ert-info ("Network used as fallback")
-          (let* ((erc-session-port 6697)
-                 (erc-network 'GNU.chat)
-                 (erc-server-current-nick "tester")
-                 (erc-networks--id (erc-networks--id-create nil)))
-            (should (string= (erc--auth-source-search :user "#chan")
-                             "foo"))))))))
-
-(ert-deftest erc--auth-source-search--overrides ()
+(ert-deftest erc--auth-source-search--netrc-overrides ()
   (ert-with-temp-file netrc-file
     :prefix "erc--auth-source-search--overrides"
     :text (erc-services-tests--auth-source-shuffle
@@ -130,33 +203,273 @@
            "machine MyHost port irc password 456"
            "machine MyHost port 6667 password 123")
 
-    (let* ((auth-sources (list netrc-file))
-           (auth-source-do-cache nil)
-           (erc-session-server "irc.gnu.org")
-           (erc-server-announced-name "my.gnu.org")
-           (erc-network 'GNU.chat)
-           (erc-server-current-nick "tester")
-           (erc-networks--id (erc-networks--id-create nil))
-           (erc-session-port 6667))
+    (let ((auth-sources (list netrc-file))
+          (auth-source-do-cache nil))
+      (erc-services-tests--auth-source-overrides
+       #'erc--auth-source-search))))
 
-      (ert-info ("Specificity and overrides")
+;; auth-source plstore backend
 
-        (ert-info ("More specific port")
-          (let ((erc-session-port 6697))
-            (should (string= (erc--auth-source-search :user "#chan")
-                             "spam"))))
+(defun erc-services-test--call-with-plstore (&rest args)
+  (advice-add 'epg-decrypt-string :override
+              (lambda (&rest r) (prin1-to-string (cadr r)))
+              '((name . erc--auth-source-plstore)))
+  (advice-add 'epg-find-configuration :override
+              (lambda (&rest _) "" '((program . "/bin/true")))
+              '((name . erc--auth-source-plstore)))
+  (unwind-protect
+      (apply #'erc--auth-source-search args)
+    (advice-remove 'epg-decrypt-string 'erc--auth-source-plstore)
+    (advice-remove 'epg-find-configuration 'erc--auth-source-plstore)))
 
-        (ert-info ("More specific user (network loses)")
-          (should (string= (erc--auth-source-search :user '("#fsf"))
-                           "42")))
+(defvar erc-services-tests--auth-source-plstore-standard-entries
+  '(("ba950d38118a76d71f9f0591bb373d6cb366a512"
+     :secret-secret t
+     :host "irc.gnu.org"
+     :user "#chan"
+     :port "irc")
+    ("7f17ca445d11158065e911a6d0f4cbf52ca250e3"
+     :secret-secret t
+     :host "my.gnu.org"
+     :user "#chan"
+     :port "irc")
+    ("fcd3c8bd6daf4509de0ad6ee98e744ce0fca9377"
+     :secret-secret t
+     :host "GNU.chat"
+     :user "#chan"
+     :port "irc")))
 
-        (ert-info ("Actual override")
-          (should (string= (erc--auth-source-search :port "6667")
-                           "sesame")))
+(defvar erc-services-tests--auth-source-plstore-standard-secrets
+  '(("ba950d38118a76d71f9f0591bb373d6cb366a512" :secret "bar")
+    ("7f17ca445d11158065e911a6d0f4cbf52ca250e3" :secret "baz")
+    ("fcd3c8bd6daf4509de0ad6ee98e744ce0fca9377" :secret "foo")))
 
-        (ert-info ("Overrides don't interfere with post-processing")
-          (should (string= (erc--auth-source-search :host "MyHost")
-                           "123")))))))
+(ert-deftest erc--auth-source-search--plstore-standard ()
+  (ert-with-temp-file plstore-file
+    :suffix ".plist"
+    :text (concat ";;; public entries -*- mode: plstore -*- \n"
+                  (prin1-to-string
+                   erc-services-tests--auth-source-plstore-standard-entries)
+                  "\n;;; secret entries\n"
+                  (prin1-to-string
+                   erc-services-tests--auth-source-plstore-standard-secrets)
+                  "\n")
+
+    (let ((auth-sources (list plstore-file))
+          (auth-source-do-cache nil))
+      (erc-services-tests--auth-source-standard
+       #'erc-services-test--call-with-plstore))))
+
+(ert-deftest erc--auth-source-search--plstore-announced ()
+  (ert-with-temp-file plstore-file
+    :suffix ".plist"
+    :text (concat ";;; public entries -*- mode: plstore -*- \n"
+                  (prin1-to-string
+                   erc-services-tests--auth-source-plstore-standard-entries)
+                  "\n;;; secret entries\n"
+                  (prin1-to-string
+                   erc-services-tests--auth-source-plstore-standard-secrets)
+                  "\n")
+
+    (let ((auth-sources (list plstore-file))
+          (auth-source-do-cache nil))
+      (erc-services-tests--auth-source-announced
+       #'erc-services-test--call-with-plstore))))
+
+(ert-deftest erc--auth-source-search--plstore-overrides ()
+  (ert-with-temp-file plstore-file
+    :suffix ".plist"
+    :text (concat
+           ";;; public entries -*- mode: plstore -*- \n"
+           (prin1-to-string
+            `(,@erc-services-tests--auth-source-plstore-standard-entries
+              ("1b3fab249a8dff77a4d8fe7eb4b0171b25cc711a"
+               :secret-secret t :host "GNU.chat" :user "#chan" :port "6697")
+              ("6cbcdc39476b8cfcca6f3e9a7876f41ec3f708cc"
+               :secret-secret t :host "my.gnu.org" :user "#fsf" :port "irc")
+              ("a33e2b3bd2d6f33995a4b88710a594a100c5e41d"
+               :secret-secret t :host "irc.gnu.org" :port "6667")
+              ("ab2fd349b2b7d6a9215bb35a92d054261b0b1537"
+               :secret-secret t :host "MyHost" :port "irc")
+              ("61a6bd552059494f479ff720e8de33e22574650a"
+               :secret-secret t :host "MyHost" :port "6667")))
+           "\n;;; secret entries\n"
+           (prin1-to-string
+            `(,@erc-services-tests--auth-source-plstore-standard-secrets
+              ("1b3fab249a8dff77a4d8fe7eb4b0171b25cc711a" :secret "spam")
+              ("6cbcdc39476b8cfcca6f3e9a7876f41ec3f708cc" :secret "42")
+              ("a33e2b3bd2d6f33995a4b88710a594a100c5e41d" :secret "sesame")
+              ("ab2fd349b2b7d6a9215bb35a92d054261b0b1537" :secret "456")
+              ("61a6bd552059494f479ff720e8de33e22574650a" :secret "123")))
+           "\n")
+
+    (let ((auth-sources (list plstore-file))
+          (auth-source-do-cache nil))
+      (erc-services-tests--auth-source-overrides
+       #'erc-services-test--call-with-plstore))))
+
+;; auth-source JSON backend
+
+(defvar erc-services-tests--auth-source-json-standard-entries
+  [(:host "irc.gnu.org" :port "irc" :user "#chan" :secret "bar")
+   (:host "my.gnu.org" :port "irc" :user "#chan" :secret "baz")
+   (:host "GNU.chat" :port "irc" :user "#chan" :secret "foo")])
+
+(ert-deftest erc--auth-source-search--json-standard ()
+  (ert-with-temp-file json-store
+    :suffix ".json"
+    :text (let ((json-object-type 'plist))
+            (json-encode
+             erc-services-tests--auth-source-json-standard-entries))
+    (let ((auth-sources (list json-store))
+          (auth-source-do-cache nil))
+      (erc-services-tests--auth-source-standard
+       #'erc--auth-source-search))))
+
+(ert-deftest erc--auth-source-search--json-announced ()
+  (ert-with-temp-file plstore-file
+    :suffix ".json"
+    :text (let ((json-object-type 'plist))
+            (json-encode
+             erc-services-tests--auth-source-json-standard-entries))
+
+    (let ((auth-sources (list plstore-file))
+          (auth-source-do-cache nil))
+      (erc-services-tests--auth-source-announced
+       #'erc--auth-source-search))))
+
+(ert-deftest erc--auth-source-search--json-overrides ()
+  (ert-with-temp-file json-file
+    :suffix ".json"
+    :text (let ((json-object-type 'plist))
+            (json-encode
+             (vconcat
+              erc-services-tests--auth-source-json-standard-entries
+              [(:secret "spam" :host "GNU.chat" :user "#chan" :port "6697")
+               (:secret "42" :host "my.gnu.org" :user "#fsf" :port "irc")
+               (:secret "sesame" :host "irc.gnu.org" :port "6667")
+               (:secret "456" :host "MyHost" :port "irc")
+               (:secret "123" :host "MyHost" :port "6667")])))
+
+    (let ((auth-sources (list json-file))
+          (auth-source-do-cache nil))
+      (erc-services-tests--auth-source-overrides
+       #'erc--auth-source-search))))
+
+;; auth-source-secrets backend
+
+(defvar erc-services-tests--auth-source-secrets-standard-entries
+  '(("#chan@irc.gnu.org:irc" ; label
+     (:host . "irc.gnu.org")
+     (:user . "#chan")
+     (:port . "irc")
+     (:xdg:schema . "org.freedesktop.Secret.Generic"))
+    ("#chan@my.gnu.org:irc"
+     (:host . "my.gnu.org")
+     (:user . "#chan")
+     (:port . "irc")
+     (:xdg:schema . "org.freedesktop.Secret.Generic"))
+    ("#chan@GNU.chat:irc"
+     (:host . "GNU.chat")
+     (:user . "#chan")
+     (:port . "irc")
+     (:xdg:schema . "org.freedesktop.Secret.Generic"))))
+
+(defvar erc-services-tests--auth-source-secrets-standard-secrets
+  '(("#chan@irc.gnu.org:irc" . "bar")
+    ("#chan@my.gnu.org:irc" . "baz")
+    ("#chan@GNU.chat:irc" . "foo")))
+
+(ert-deftest erc--auth-source-search--secrets-standard ()
+  (skip-unless (bound-and-true-p secrets-enabled))
+  (let ((auth-sources '("secrets:Test"))
+        (auth-source-do-cache nil)
+        (entries erc-services-tests--auth-source-secrets-standard-entries)
+        (secrets erc-services-tests--auth-source-secrets-standard-secrets))
+
+    (cl-letf (((symbol-function 'secrets-search-items)
+               (lambda (col &rest r)
+                 (should (equal col "Test"))
+                 (should (plist-get r :user))
+                 (map-keys entries)))
+              ((symbol-function 'secrets-get-secret)
+               (lambda (col label)
+                 (should (equal col "Test"))
+                 (assoc-default label secrets)))
+              ((symbol-function 'secrets-get-attributes)
+               (lambda (col label)
+                 (should (equal col "Test"))
+                 (assoc-default label entries))))
+
+      (erc-services-tests--auth-source-standard
+       #'erc--auth-source-search))))
+
+(ert-deftest erc--auth-source-search--secrets-announced ()
+  (skip-unless (bound-and-true-p secrets-enabled))
+  (let ((auth-sources '("secrets:Test"))
+        (auth-source-do-cache nil)
+        (entries erc-services-tests--auth-source-secrets-standard-entries)
+        (secrets erc-services-tests--auth-source-secrets-standard-secrets))
+
+    (cl-letf (((symbol-function 'secrets-search-items)
+               (lambda (col &rest r)
+                 (should (equal col "Test"))
+                 (should (plist-get r :user))
+                 (map-keys entries)))
+              ((symbol-function 'secrets-get-secret)
+               (lambda (col label)
+                 (should (equal col "Test"))
+                 (assoc-default label secrets)))
+              ((symbol-function 'secrets-get-attributes)
+               (lambda (col label)
+                 (should (equal col "Test"))
+                 (assoc-default label entries))))
+
+      (erc-services-tests--auth-source-announced
+       #'erc--auth-source-search))))
+
+(ert-deftest erc--auth-source-search--secrets-overrides ()
+  (skip-unless (bound-and-true-p secrets-enabled))
+  (let ((auth-sources '("secrets:Test"))
+        (auth-source-do-cache nil)
+        (entries `(,@erc-services-tests--auth-source-secrets-standard-entries
+                   ("#chan@GNU.chat:6697"
+                    (:host . "GNU.chat") (:user . "#chan") (:port . "6697")
+                    (:xdg:schema . "org.freedesktop.Secret.Generic"))
+                   ("#fsf@my.gnu.org:irc"
+                    (:host . "my.gnu.org") (:user . "#fsf") (:port . "irc")
+                    (:xdg:schema . "org.freedesktop.Secret.Generic"))
+                   ("irc.gnu.org:6667"
+                    (:host . "irc.gnu.org") (:port . "6667")
+                    (:xdg:schema . "org.freedesktop.Secret.Generic"))
+                   ("MyHost:irc"
+                    (:host . "MyHost") (:port . "irc")
+                    (:xdg:schema . "org.freedesktop.Secret.Generic"))
+                   ("MyHost:6667"
+                    (:host . "MyHost") (:port . "6667")
+                    (:xdg:schema . "org.freedesktop.Secret.Generic"))))
+        (secrets `(,@erc-services-tests--auth-source-secrets-standard-secrets
+                   ("#chan@GNU.chat:6697" . "spam")
+                   ("#fsf@my.gnu.org:irc" . "42" )
+                   ("irc.gnu.org:6667" . "sesame")
+                   ("MyHost:irc" . "456")
+                   ("MyHost:6667" . "123"))))
+
+    (cl-letf (((symbol-function 'secrets-search-items)
+               (lambda (col &rest _)
+                 (should (equal col "Test"))
+                 (map-keys entries)))
+              ((symbol-function 'secrets-get-secret)
+               (lambda (col label)
+                 (should (equal col "Test"))
+                 (assoc-default label secrets)))
+              ((symbol-function 'secrets-get-attributes)
+               (lambda (col label)
+                 (should (equal col "Test"))
+                 (assoc-default label entries))))
+
+      (erc-services-tests--auth-source-overrides
+       #'erc--auth-source-search))))
 
 ;; auth-source-pass backend
 
@@ -185,7 +498,8 @@
     ("GNU.chat:irc/#chan"
      ("port" . "irc") ("user" . "#chan") (secret . "foo"))))
 
-(ert-deftest erc-services-tests--auth-source-pass--standard ()
+(ert-deftest erc--auth-source-search--pass-standard ()
+  (ert-skip "Pass backend not yet supported")
   (let ((store erc-join-tests--auth-source-pass-entries)
         (auth-sources '(password-store))
         (auth-source-do-cache nil))
@@ -195,38 +509,10 @@
               ((symbol-function 'auth-source-pass-entries)
                (lambda () (mapcar #'car store))))
 
-      (ert-info ("Normal ordering")
+      (erc-services-tests--auth-source-standard #'erc--auth-source-search))))
 
-        (ert-info ("Session wins")
-          (let ((erc-session-server "irc.gnu.org")
-                (erc-server-announced-name "my.gnu.org")
-                (erc-session-port 6697)
-                (erc-network 'fake)
-                (erc-server-current-nick "tester")
-                (erc-networks--id (erc-networks--id-create 'GNU.chat)))
-            (should (string= (erc--auth-source-search :user "#chan")
-                             "foo"))))
-
-        (ert-info ("Network wins")
-          (let* ((erc-session-server "irc.gnu.org")
-                 (erc-server-announced-name "my.gnu.org")
-                 (erc-session-port 6697)
-                 (erc-network 'GNU.chat)
-                 (erc-server-current-nick "tester")
-                 (erc-networks--id (erc-networks--id-create nil)))
-            (should (string= (erc--auth-source-search :user "#chan")
-                             "foo"))))
-
-        (ert-info ("Announced wins")
-          (let ((erc-session-server "irc.gnu.org")
-                (erc-server-announced-name "my.gnu.org")
-                (erc-session-port 6697)
-                erc-network
-                (erc-networks--id (erc-networks--id-create nil)))
-            (should (string= (erc--auth-source-search :user "#chan")
-                             "baz"))))))))
-
-(ert-deftest erc-services-tests--auth-source-pass--announced ()
+(ert-deftest erc--auth-source-search--pass-announced ()
+  (ert-skip "Pass backend not yet supported")
   (let ((store erc-join-tests--auth-source-pass-entries)
         (auth-sources '(password-store))
         (auth-source-do-cache nil))
@@ -236,79 +522,31 @@
               ((symbol-function 'auth-source-pass-entries)
                (lambda () (mapcar #'car store))))
 
-      (let* ((erc--isupport-params (make-hash-table))
-             (erc-server-parameters '(("CHANTYPES" . "&#")))
-             (erc--target (erc--target-from-string "&chan")))
+      (erc-services-tests--auth-source-announced #'erc--auth-source-search))))
 
-        (ert-info ("Announced prioritized")
-
-          (ert-info ("Announced wins")
-            (let* ((erc-session-server "irc.gnu.org")
-                   (erc-server-announced-name "my.gnu.org")
-                   (erc-session-port 6697)
-                   (erc-network 'GNU.chat)
-                   (erc-server-current-nick "tester")
-                   (erc-networks--id (erc-networks--id-create nil)))
-              (should (string= (erc--auth-source-search :user "#chan")
-                               "baz"))))
-
-          (ert-info ("Peer next")
-            (let* ((erc-server-announced-name "irc.gnu.org")
-                   (erc-session-port 6697)
-                   (erc-network 'GNU.chat)
-                   (erc-server-current-nick "tester")
-                   (erc-networks--id (erc-networks--id-create nil)))
-              (should (string= (erc--auth-source-search :user "#chan")
-                               "bar"))))
-
-          (ert-info ("Network used as fallback")
-            (let* ((erc-session-port 6697)
-                   (erc-network 'GNU.chat)
-                   (erc-server-current-nick "tester")
-                   (erc-networks--id (erc-networks--id-create nil)))
-              (should (string= (erc--auth-source-search :user "#chan")
-                               "foo")))))))))
-
-(ert-deftest erc-services-tests--auth-source-pass--overrides ()
-  (let* ((store
-          `(,@erc-join-tests--auth-source-pass-entries
-            ("GNU.chat:6697/#chan"
-             ("port" . "6697") ("user" . "#chan") (secret . "spam"))
-            ("my.gnu.org:irc/#fsf"
-             ("port" . "irc") ("user" . "#fsf") (secret . "42"))
-            ("irc.gnu.org:6667"
-             ("port" . "6667") (secret . "sesame"))
-            ("MyHost:irc"
-             ("port" . "irc") (secret . "456"))
-            ("MyHost:6667"
-             ("port" . "6667") (secret . "123"))))
-         (auth-sources '(password-store))
-         (auth-source-do-cache nil)
-         (erc-session-server "irc.gnu.org")
-         (erc-server-announced-name "my.gnu.org")
-         (erc-network 'GNU.chat)
-         (erc-server-current-nick "tester")
-         (erc-networks--id (erc-networks--id-create nil))
-         (erc-session-port 6667))
+(ert-deftest erc--auth-source-search--pass-overrides ()
+  (ert-skip "Pass backend not yet supported")
+  (let ((store
+         `(,@erc-join-tests--auth-source-pass-entries
+           ("GNU.chat:6697/#chan"
+            ("port" . "6697") ("user" . "#chan") (secret . "spam"))
+           ("my.gnu.org:irc/#fsf"
+            ("port" . "irc") ("user" . "#fsf") (secret . "42"))
+           ("irc.gnu.org:6667"
+            ("port" . "6667") (secret . "sesame"))
+           ("MyHost:irc"
+            ("port" . "irc") (secret . "456"))
+           ("MyHost:6667"
+            ("port" . "6667") (secret . "123"))))
+        (auth-sources '(password-store))
+        (auth-source-do-cache nil))
 
     (cl-letf (((symbol-function 'auth-source-pass-parse-entry)
                (apply-partially #'erc-services-tests--asp-parse-entry store))
               ((symbol-function 'auth-source-pass-entries)
                (lambda () (mapcar #'car store))))
 
-      (ert-info ("More specific port")
-        (let ((erc-session-port 6697))
-          (should (string= (erc--auth-source-search :user "#chan") "spam"))))
-
-      (ert-info ("Network wins")
-        (should (string= (erc--auth-source-search :user '("#fsf")) "42")))
-
-      (ert-info ("Actual override")
-        (should (string= (erc--auth-source-search :port "6667") "sesame")))
-
-      (ert-info ("Overrides don't interfere with post-processing")
-        (should (string= (erc--auth-source-search :host "MyHost")
-                         "123"))))))
+      (erc-services-tests--auth-source-overrides #'erc--auth-source-search))))
 
 ;;;; The services module
 

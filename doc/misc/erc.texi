@@ -752,9 +752,9 @@ string abiding by the rules of the network.
 @cindex password
 
 @defopt erc-prompt-for-password
-If non-@code{nil} (the default), @kbd{M-x erc} prompts for a server
-password.  This only affects interactive invocations of @code{erc} and
-@code{erc-tls}.
+If non-@var{nil} (the default), @kbd{M-x erc @key{RET}} prompts for a
+server password.  This only affects interactive invocations of
+@command{erc} and @command{erc-tls}.
 @end defopt
 
 @noindent
@@ -769,32 +769,29 @@ machine irc.example.net login mynick password sEcReT
 
 @noindent
 Here, @code{irc.example.net} corresponds to the @var{server} param
-passed to @code{erc} or @code{erc-tls} or provideed at the ``IRC
+passed to @command{erc} or @command{erc-tls} or provideed at the ``IRC
 server:'' prompt.  Unfortunately, specifying a network, like
-``Libera.Chat'', or a specific network server, like
-@code{zirconium.libera.chat}, won't work for this introductory
-exchange because IRC servers don't provide such information up front.
+``Libera.Chat,'' or a specific network server, like
+``zirconium.libera.chat,'' won't work for this introductory exchange
+because IRC servers don't provide such information up front.
 
 If ERC can't find a suitable server password, it'll just skip the IRC
-@code{PASS} command altogether, something users may want when using
+``PASS'' command altogether, something users may want when using
 CertFP or engaging NickServ via ERC's ``services'' module.  If that
-sounds like you, set the option @code{erc-connect-auth-source-host} to
-@code{nil}.  You can also set it to @code{t} to tell ERC to favor a
-``network identifier'' (corresponding to the @var{id} parameter of
-@code{erc-tls}) as the ``machine'' field and to fall back on
-@var{server} when an @var{id} hasn't been provided.  Note that some
-networks and IRCds may support account-services authentication via
-server password when specified using the non-standard
-``mynick:sEcReT'' convention.
+sounds like you, set the option
+@code{erc-auth-source-parameters-server-function} to @code{nil}.  Note
+that some networks and IRCds may support account-services
+authentication via server password when specified using the
+non-standard ``mynick:sEcReT'' convention.
 
 @code{auth-source} can also be used to authenticate to account
 services the traditional way, through a bot called ``NickServ''.  To
 tell ERC to do that, set the option
 @code{erc-use-auth-source-for-nickserv-password} to @code{t}.  For
 these queries, entries featuring user-provided IDs and networks are
-matched first, followed by network-specific servers and dialed TCP
-endpoints (the @var{SERVER} passed to @code{erc}). The following
-netrc-style entries appear in order of precedence:
+matched first, followed by network-specific servers and dialed
+endpoints (typically, the @var{SERVER} passed to @command{erc}). The
+following netrc-style entries appear in order of precedence:
 
 @example
 machine Libera/cellphone login "mynick" password sEcReT
@@ -803,21 +800,74 @@ machine zirconium.libera.chat login "mynick" password sEcReT
 machine irc.libera.chat login "mynick" password sEcReT
 @end example
 
-@noindent
-To modify this behavior, for example by signaling an error instead of
-degrading gracefully (which may feel like anything but, depending on
-your use case), see option @code{erc-auth-source-parameters-function}.
+If this fallback stuff doesn't appeal to you, see the option
+@code{erc-auth-source-parameters-server-function} and friends just
+below.  These let you decide based on context how a connection's
+parameters should map to auth-source queries.  But most users can just
+ignore all the details and get by with something like the following as
+values:
 
-ERC also consults @code{auth-source} to find any channel keys required
-for the channels that you wish to autojoin, as specified by the
-variable @code{erc-autojoin-channels-alist}.  When modifying a
-netrc-style @code{auth-source} file for such use, ensure an entry
-exists with the channel name, for example ``#erc'', in the value of
-the ``login'' field (also known as the ``user'' field). The actual key
-goes in the ``password'' field.
+@example
+(defun my-erc-auth-source-server (&rest _)
+  (list :host "MyHost"))
 
-For more details, @pxref{Top,,auth-source, auth, Emacs auth-source Library}.
+;; or
 
+(defun my-erc-auth-source-services (&rest _)
+  (list :host (read-string "Auth-source host: ")))
+@end example
+
+ERC also consults @code{auth-source} to find ``keys'' that may be
+required by certain channels you join.  When modifying a traditional
+@code{auth-source} entry for such use, put the channel name, for
+example ``##my-plus-k-chan,'' in the value of the ``user'' field (also
+known as the ``login'' field). The actual key goes in the ``password''
+(or ``secrets'') field.
+
+For details, @pxref{Top,,auth-source, auth, Emacs auth-source Library}.
+
+@defopt erc-auth-source-parameters-server-function
+@end defopt
+@defopt erc-auth-source-parameters-services-function
+@end defopt
+@defopt erc-auth-source-parameters-join-function
+
+ERC calls these functions with keyword arguments recognized by
+`auth-source-search', namely, those deemed most relevant to the
+current context.  For example, with NickServ queries, @code{:user}
+will be the ``desired'' nickname rather than the current one.
+Generalized names, like @code{:user} and @code{:host}, are always used
+over back-end specific ones, like @code{:login} or @code{:machine}.
+ERC expects a refined plist in return.
+
+The ordering of the returned pairs influences how results are filtered
+as does the ordering of the members of any individual composite
+values.  If necessary, the former (pairs) takes priority over the
+latter (values).  For example, if the function returns
+
+@example
+(:host (foo bar) :port (123 456))
+@end example
+
+the secret from an auth-source entry of host foo and port 456 will be
+chosen over another of host bar and port 123.  However, if the
+function returns
+
+@example
+(:port (123 456) :host (foo bar))
+@end example
+
+the opposite will be true.  In both cases, two entries with the same
+host but different ports would see the one with port 123 being
+selected.  Much the same would happen for entries sharing only a port:
+the one with host foo would win.
+
+Some auth-source back ends may not be compatible; netrc, plstore,
+json, and secrets are currently supported.
+
+The default value for all variants is currently
+@code{erc-auth-source-determine-params-merge}.
+@end defopt
 
 @subheading Full name
 
@@ -844,26 +894,25 @@ This can be either a string or a function to call.
 
 
 @subheading ID
-Every IRC connection has a ``network identifier''.  It's an abstract
-concept used internally for referring to a connection, primarily for
-the purpose of wrangling buffers.  An ID is normally derived from a
-combination of logical and physical connection parameters (typically
-IRC and TCP, respectively).  Explicitly providing one to an
-entry-point function (like @code{erc-tls}) is rarely needed except in
-rare situations where ERC would otherwise have trouble discerning
-between connections.
+ERC uses an abstract designation called a ``network identifier'' for
+referring to a connection internally.  While normally derived from a
+combination of logical and physical connection parameters, an ID can
+also be explicitly provided via an entry-point command (like
+@command{erc-tls}). Use this in rare situations where ERC would
+otherwise have trouble discerning between connections.
 
-One such situation would be to allow multiple connections to the same
-network with the same nick but different (non-standard) "device"
-identifiers, which some bouncers may support.  Another might be to
-mimic the experience of popular standalone clients, which normally
-offer ``named'' persistent configurations with server buffers
-reflecting those names.  Yet another use case might involve
-third-party code needing to identify a connection unequivocally but in
-a human-friendly way devoid of noisy suffixes.
+One such situation might see multiple connections to the same network
+using the same nick but different (non-standard) "device" identifiers,
+which some bouncers may support.  Another might be to mimic the
+experience offered by popular standalone clients, which normally offer
+``named'' persistent configurations with server buffers reflecting
+those names.  Yet another use case might involve third-party code
+needing to identify a connection unequivocally but in a human-friendly
+way suitable for UI components.
 
-Strings and symbols make the most sense when providing an ID as an
-entry-point argument, but any printable object is acceptable.
+When providing an ID as an entry-point argument, strings and symbols
+make the most sense, but any reasonably printable object is
+acceptable.
 
 
 @node Sample Configuration

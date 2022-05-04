@@ -174,6 +174,18 @@ function `erc-nickserv-get-password'."
   :version "28.1"
   :type 'boolean)
 
+(defcustom erc-auth-source-parameters-services-function
+  #'erc-auth-source-determine-params-merge
+  "NickServ-specific filter for `auth-source-search'.
+Called with keyword parameters known to `auth-source-search' and
+relevant to authenticating to nickname services.  In return, ERC expects
+a possibly modified set of parameters for querying auth-source and for
+narrowing the results.  See info node `(erc) Connecting' for details."
+  :package-version '(ERC . "5.4.1") ; FIXME update when publishing to ELPA
+  :type '(choice (const erc-auth-source-determine-params-merge)
+                 (const nil)
+                 function))
+
 (defcustom erc-nickserv-passwords nil
   "Passwords used when identifying to NickServ automatically.
 `erc-prompt-for-nickserv-password' must be nil for these
@@ -436,8 +448,11 @@ it returns nil."
        (ret (or (when erc-nickserv-passwords
                   (assoc-default nick
                                  (cadr (assq esid erc-nickserv-passwords))))
-                (when erc-use-auth-source-for-nickserv-password
-                  (erc--auth-source-search :user nick))
+                (when (and erc-use-auth-source-for-nickserv-password
+                           erc-auth-source-parameters-services-function)
+                  (apply #'erc--auth-source-search
+                         (funcall erc-auth-source-parameters-services-function
+                                  :user nick)))
                 (when erc-prompt-for-nickserv-password
                   (read-passwd
                    (format "NickServ password for %s on %s (RET to cancel): "

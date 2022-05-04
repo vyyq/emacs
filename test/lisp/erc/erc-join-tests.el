@@ -30,7 +30,7 @@
 
   (let (calls
         common
-        erc-kill-server-hook)
+        erc-kill-channel-hook erc-kill-server-hook erc-kill-buffer-hook)
 
     (cl-letf (((symbol-function 'erc-server-send)
                (lambda (line) (push line calls))))
@@ -78,7 +78,7 @@
 
   (let (calls
         common
-        erc-kill-server-hook
+        erc-kill-channel-hook erc-kill-server-hook erc-kill-buffer-hook
         (erc-autojoin-timing 'ident)
         (erc-autojoin-delay 0.05))
 
@@ -127,7 +127,7 @@
 
   (let (calls
         common
-        erc-kill-server-hook
+        erc-kill-channel-hook erc-kill-server-hook erc-kill-buffer-hook
         (erc-autojoin-timing 'ident))
 
     (cl-letf (((symbol-function 'erc-server-send)
@@ -157,9 +157,10 @@
           (funcall common))
         (should (equal (pop calls) "JOIN #chan"))))))
 
-(defun erc-join-tests--autojoin-add--common (setup)
+(defun erc-join-tests--autojoin-add--common (setup &optional fwd)
   (let (calls
-        erc-autojoin-channels-alist)
+        erc-autojoin-channels-alist
+        erc-kill-channel-hook erc-kill-server-hook erc-kill-buffer-hook)
 
     (cl-letf (((symbol-function 'erc-handle-parsed-server-response)
                (lambda (_p m) (push m calls))))
@@ -178,14 +179,16 @@
 
         (ert-info ("Add #chan")
           (erc-parse-server-response erc-server-process
-                                     ":tester!~i@c.u JOIN #chan")
+                                     (concat ":tester!~i@c.u JOIN #chan"
+                                             (and fwd " * :Tes Ter")))
           (should calls)
           (erc-autojoin-add erc-server-process (pop calls))
           (should (equal erc-autojoin-channels-alist '((FooNet "#chan")))))
 
         (ert-info ("More recently joined chans are prepended")
-          (erc-parse-server-response erc-server-process
-                                     ":tester!~i@c.u JOIN #spam")
+          (erc-parse-server-response
+           erc-server-process ; with account username
+           (concat ":tester!~i@c.u JOIN #spam" (and fwd " tester :Tes Ter")))
           (should calls)
           (erc-autojoin-add erc-server-process (pop calls))
           (should (equal erc-autojoin-channels-alist
@@ -193,7 +196,8 @@
 
         (ert-info ("Duplicates skipped")
           (erc-parse-server-response erc-server-process
-                                     ":tester!~i@c.u JOIN #chan")
+                                     (concat ":tester!~i@c.u JOIN #chan"
+                                             (and fwd " * :Tes Ter")))
           (should calls)
           (erc-autojoin-add erc-server-process (pop calls))
           (should (equal erc-autojoin-channels-alist
@@ -201,7 +205,8 @@
 
         (ert-info ("Server used for local channel")
           (erc-parse-server-response erc-server-process
-                                     ":tester!~i@c.u JOIN &local")
+                                     (concat ":tester!~i@c.u JOIN &local"
+                                             (and fwd " * :Tes Ter")))
           (should calls)
           (erc-autojoin-add erc-server-process (pop calls))
           (should (equal erc-autojoin-channels-alist
@@ -213,6 +218,12 @@
    (lambda () (setq erc-network 'FooNet
                     erc-networks--id (erc-networks--id-create nil)))))
 
+(ert-deftest erc-autojoin-add--network-extended-syntax ()
+  (erc-join-tests--autojoin-add--common
+   (lambda () (setq erc-network 'FooNet
+                    erc-networks--id (erc-networks--id-create nil)))
+   'forward-compatible))
+
 (ert-deftest erc-autojoin-add--network-id ()
   (erc-join-tests--autojoin-add--common
    (lambda () (setq erc-network 'invalid
@@ -220,7 +231,8 @@
 
 (ert-deftest erc-autojoin-add--server ()
   (let (calls
-        erc-autojoin-channels-alist)
+        erc-autojoin-channels-alist
+        erc-kill-channel-hook erc-kill-server-hook erc-kill-buffer-hook)
 
     (cl-letf (((symbol-function 'erc-handle-parsed-server-response)
                (lambda (_p m) (push m calls))))
@@ -245,7 +257,8 @@
 
 (defun erc-join-tests--autojoin-remove--common (setup)
   (let (calls
-        erc-autojoin-channels-alist)
+        erc-autojoin-channels-alist
+        erc-kill-channel-hook erc-kill-server-hook erc-kill-buffer-hook)
 
     (cl-letf (((symbol-function 'erc-handle-parsed-server-response)
                (lambda (_p m) (push m calls))))
@@ -307,7 +320,8 @@
 
 (ert-deftest erc-autojoin-remove--server ()
   (let (calls
-        erc-autojoin-channels-alist)
+        erc-autojoin-channels-alist
+        erc-kill-channel-hook erc-kill-server-hook erc-kill-buffer-hook)
 
     (cl-letf (((symbol-function 'erc-handle-parsed-server-response)
                (lambda (_p m) (push m calls))))
