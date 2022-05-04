@@ -214,6 +214,7 @@ test-lisp-erc-inotify:
     - if: '$CI_PIPELINE_SOURCE == "schedule"'
       when: never
     - changes:
+        - test/infra/*
         - lisp/erc/*.el
         - test/lisp/erc/*.el
         - test/lisp/erc/*resources/**
