@@ -1,6 +1,6 @@
 ;;; erc-d.el --- A dumb test server for ERC -*- lexical-binding: t -*-
 
-;; Copyright (C) 2020-2021 Free Software Foundation, Inc.
+;; Copyright (C) 2020-2022 Free Software Foundation, Inc.
 ;;
 ;; Version: 1.1
 ;; FIXME reset^ to 1.0 or delete if adding to Emacs
@@ -318,6 +318,9 @@ PROCESS should be a client connection or a server network process."
        (dolist (line (split-string ,string "\r\n"))
          (erc-d--m process "<- %s:%s %s" name id line)))))
 
+(defun erc-d--log-process-event (server process msg)
+  (erc-d--m server "%s: %s" process (string-trim-right msg)))
+
 (defun erc-d--send (process string)
   "Send STRING to PROCESS peer."
   (erc-d--log process string 'outbound)
@@ -425,7 +428,7 @@ This will start the teardown for DIALOG."
 
 (defun erc-d--process-sentinel (process event)
   "Set up or tear down client-connection PROCESS depending on EVENT."
-  (erc-d--m process "Connection %s: %s" process (string-trim-right event))
+  (erc-d--log-process-event process process event)
   (if (eq 'open (process-status process))
       (erc-d--initialize-client process)
     (let* ((dialog (process-get process :dialog))
@@ -481,6 +484,7 @@ processes.  NAME is used for the process and the buffer."
                                      :buffer buf
                                      :noquery t
                                      :filter #'erc-d--filter
+                                     :log #'erc-d--log-process-event
                                      :sentinel #'erc-d--process-sentinel
                                      :name name
                                      :family (if host 'ipv4 'local)

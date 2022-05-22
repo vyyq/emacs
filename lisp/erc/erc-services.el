@@ -174,15 +174,15 @@ function `erc-nickserv-get-password'."
   :version "28.1"
   :type 'boolean)
 
-(defcustom erc-auth-source-parameters-services-function
-  #'erc-auth-source-determine-params-merge
-  "NickServ-specific filter for `auth-source-search'.
-Called with keyword parameters known to `auth-source-search' and
-relevant to authenticating to nickname services.  In return, ERC expects
-a possibly modified set of parameters for querying auth-source and for
-narrowing the results.  See info node `(erc) Connecting' for details."
+(defcustom erc-auth-source-services-function #'erc-auth-source-search
+  "Function to retrieve NickServ password from auth-source.
+Called with a subset of keyword parameters known to `auth-source-search'
+and relevant to authenticating to nickname services.  In return, ERC
+expects a string to send as the password, or nil, to fall through to the
+next method, such as prompting.  See info node `(erc) Connecting' for
+details."
   :package-version '(ERC . "5.4.1") ; FIXME update when publishing to ELPA
-  :type '(choice (const erc-auth-source-determine-params-merge)
+  :type '(choice (const erc-auth-source-search)
                  (const nil)
                  function))
 
@@ -444,19 +444,17 @@ lookups stops and this function returns it (or returns nil if it
 is empty).  Otherwise, no corresponding password was found, and
 it returns nil."
   (when-let*
-      ((esid (erc-networks--id-symbol erc-networks--id))
+      ((nid (erc-networks--id-symbol erc-networks--id))
        (ret (or (when erc-nickserv-passwords
                   (assoc-default nick
-                                 (cadr (assq esid erc-nickserv-passwords))))
+                                 (cadr (assq nid erc-nickserv-passwords))))
                 (when (and erc-use-auth-source-for-nickserv-password
-                           erc-auth-source-parameters-services-function)
-                  (apply #'erc--auth-source-search
-                         (funcall erc-auth-source-parameters-services-function
-                                  :user nick)))
+                           erc-auth-source-services-function)
+                  (funcall erc-auth-source-services-function :user nick))
                 (when erc-prompt-for-nickserv-password
                   (read-passwd
                    (format "NickServ password for %s on %s (RET to cancel): "
-                           nick esid)))))
+                           nick nid)))))
        ((not (string-empty-p ret))))
     ret))
 

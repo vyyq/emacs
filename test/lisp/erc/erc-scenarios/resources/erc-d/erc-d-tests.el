@@ -1,6 +1,6 @@
-;;; erc-d-self.el --- tests for erc-d -*- lexical-binding: t -*-
+;;; erc-d-tests.el --- tests for erc-d -*- lexical-binding: t -*-
 
-;; Copyright (C) 2020-2021 Free Software Foundation, Inc.
+;; Copyright (C) 2020-2022 Free Software Foundation, Inc.
 ;;
 ;; This file is part of GNU Emacs.
 ;;
@@ -19,29 +19,16 @@
 ;; <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
-;;
-;; This file tests the dumb server itself.  The file name does not end
-;; in "-tests.el" because test/Makefile looks for corresponding
-;; library files and raises an error when one isn't found.
 
 ;;; Code:
 (require 'ert-x)
 (eval-and-compile
-  (let ((load-path (cons (expand-file-name "erc-d" (ert-resource-directory))
+  (let ((load-path (cons (expand-file-name ".." (ert-resource-directory))
                          load-path)))
     (require 'erc-d)
     (require 'erc-d-t)))
 
 (require 'erc)
-
-;; For now, we need these tests to work in two different layouts:
-;; inside emacs.git, under test/lisp/erc/erc-scenarios, and as part of
-;; a standalone erc-d library.
-
-(defvar erc-d-self--resources-directory
-  (let ((default-directory (ert-resource-directory)))
-    (expand-file-name
-     (if (file-readable-p "erc-d/resources") "erc-d/resources" ""))))
 
 (ert-deftest erc-d-u--canned-load-dialog--basic ()
   (should-not (get-buffer "basic.eld"))
@@ -69,7 +56,7 @@
   (should-not (get-buffer "basic.eld"))
   (should-not erc-d-u--canned-buffers))
 
-(defun erc-d-self--make-hunk-reader (hunks)
+(defun erc-d-tests--make-hunk-reader (hunks)
   (let ((p (erc-d-u--read-dialog hunks)))
     (lambda () (erc-d-u--read-exchange p))))
 
@@ -78,11 +65,11 @@
   (should-not (get-buffer "basic.eld"))
   (should-not erc-d-u--canned-buffers)
   (let* ((exes (erc-d-u--canned-load-dialog 'basic))
-         (pass (erc-d-self--make-hunk-reader exes))
-         (nick (erc-d-self--make-hunk-reader exes))
-         (user (erc-d-self--make-hunk-reader exes))
-         (modu (erc-d-self--make-hunk-reader exes))
-         (modc (erc-d-self--make-hunk-reader exes)))
+         (pass (erc-d-tests--make-hunk-reader exes))
+         (nick (erc-d-tests--make-hunk-reader exes))
+         (user (erc-d-tests--make-hunk-reader exes))
+         (modu (erc-d-tests--make-hunk-reader exes))
+         (modc (erc-d-tests--make-hunk-reader exes)))
 
     (should (equal (funcall user) '(user 0.2 "USER user 0 * :tester")))
     (should (equal (funcall modu) '(mode-user 1.2 "MODE tester +i")))
@@ -207,7 +194,7 @@
       (ring-insert-at-beginning ring (make-erc-d-exchange :tag 'bar))
       (should (erc-d--active-ex-p ring)))))
 
-(defun erc-d-self--parse-message-upstream (raw)
+(defun erc-d-tests--parse-message-upstream (raw)
   "Hack shim for parsing RAW line recvd from peer."
   (cl-letf (((symbol-function #'erc-handle-parsed-server-response)
              (lambda (_ p) p)))
@@ -233,7 +220,7 @@
 (ert-deftest erc-d-i--parse-message ()
   (let* ((raw (concat "@time=2020-11-23T09:10:33.088Z "
                       ":tilde.chat BATCH +1 chathistory :#meta"))
-         (upstream (erc-d-self--parse-message-upstream raw))
+         (upstream (erc-d-tests--parse-message-upstream raw))
          (ours (erc-d-i--parse-message raw)))
 
     (ert-info ("Baseline upstream")
@@ -292,7 +279,7 @@
   (let* ((data (with-temp-buffer
                  (insert-file-contents
                   (expand-file-name "irc-parser-tests.eld"
-                                    erc-d-self--resources-directory))
+                                    (ert-resource-directory)))
                  (read (current-buffer))))
          (tests (assoc-default 'tests (assoc-default 'msg-split data)))
          input atoms m ours)
@@ -322,7 +309,7 @@
             (should (equal ours params))
           (should-not ours))))))
 
-(defun erc-d-self--new-ex (existing raw-hunk)
+(defun erc-d-tests--new-ex (existing raw-hunk)
   (let* ((f (lambda (_) (pop raw-hunk)))
          (sd (make-erc-d-u-scan-d :f f)))
     (setf (erc-d-exchange-hunk existing) (make-erc-d-u-scan-e :sd sd)
@@ -337,7 +324,7 @@
                                             (f . ,(lambda () "3"))
                                             (i . emacs-pid))))
          (exchange (make-erc-d-exchange :dialog dialog))
-         (mex (apply-partially #'erc-d-self--new-ex exchange))
+         (mex (apply-partially #'erc-d-tests--new-ex exchange))
          it)
 
     (erc-d-exchange-reload dialog exchange)
@@ -405,7 +392,7 @@
                                         :request "foo bar baz"
                                         ;;            11  222
                                         :match-data '(4 11 4 6 8 11)))
-         (mex (apply-partially #'erc-d-self--new-ex exchange))
+         (mex (apply-partially #'erc-d-tests--new-ex exchange))
          it)
 
     (erc-d-exchange-reload dialog exchange)
@@ -457,7 +444,7 @@
                  (cons 'k (lambda () "abc"))))
          (dialog (make-erc-d-dialog :vars alist))
          (exchange (make-erc-d-exchange :dialog dialog))
-         (mex (apply-partially #'erc-d-self--new-ex exchange))
+         (mex (apply-partially #'erc-d-tests--new-ex exchange))
          it)
 
     (erc-d-exchange-reload dialog exchange)
@@ -536,6 +523,7 @@
     (kill-buffer "*foo*")))
 
 (ert-deftest erc-d-t-wait-for ()
+  :tags '(:unstable)
   (let (v)
     (run-at-time 0.2 nil (lambda () (setq v t)))
     (should (erc-d-t-wait-for 0.4 "result becomes non-nil" v))
@@ -546,15 +534,15 @@
     (setq v nil)
     (should-error (erc-d-t-wait-for -0.4 "inverted becomes non-nil" v))))
 
-(defvar erc-d-self-with-server-password "changeme")
+(defvar erc-d-tests-with-server-password "changeme")
 
 ;; Compromise between removing `autojoin' from `erc-modules' entirely
 ;; and allowing side effects to meddle excessively
 (defvar erc-autojoin-channels-alist)
 
 ;; This is only meant to be used by tests in this file.
-(cl-defmacro erc-d-self-with-server ((dumb-server-var erc-server-buffer-var)
-                                     dialog &rest body)
+(cl-defmacro erc-d-tests-with-server ((dumb-server-var erc-server-buffer-var)
+                                      dialog &rest body)
   "Create server for DIALOG and run BODY.
 DIALOG may also be a list of dialogs.  ERC-SERVER-BUFFER-VAR and
 DUMB-SERVER-VAR are bound accordingly in BODY."
@@ -582,7 +570,7 @@ DUMB-SERVER-VAR are bound accordingly in BODY."
        (erc-toggle-debug-irc-protocol))
      (setq ,erc-server-buffer-var
            (erc :server "localhost"
-                :password erc-d-self-with-server-password
+                :password erc-d-tests-with-server-password
                 :port (process-contact ,dumb-server-var :service)
                 :nick "tester"
                 :full-name "tester"))
@@ -599,7 +587,7 @@ DUMB-SERVER-VAR are bound accordingly in BODY."
          (kill-buffer ,erc-server-buffer-var)
          (erc-d-t-kill-related-buffers)))))
 
-(defmacro erc-d-self-with-failure-spy (found func-syms &rest body)
+(defmacro erc-d-tests-with-failure-spy (found func-syms &rest body)
   "Wrap functions with advice for inspecting errors caused by BODY.
 Do this for functions whose names appear in FUNC-SYMS.  When running
 advice code, add errors to list FOUND.  Note: the teardown finalizer is
@@ -654,7 +642,7 @@ nonzero for this to work."
       (kill-buffer dumb-server-buffer))))
 
 (ert-deftest erc-d-run-basic ()
-  (erc-d-self-with-server (_ _) basic
+  (erc-d-tests-with-server (_ _) basic
     (with-current-buffer (erc-d-t-wait-for 3 (get-buffer "#chan"))
       (erc-d-t-search-for 2 "hey"))
     (when noninteractive
@@ -662,7 +650,7 @@ nonzero for this to work."
 
 (ert-deftest erc-d-run-eof ()
   (skip-unless noninteractive)
-  (erc-d-self-with-server (_ erc-s-buf) eof
+  (erc-d-tests-with-server (_ erc-s-buf) eof
     (with-current-buffer (erc-d-t-wait-for 3 (get-buffer "#chan"))
       (erc-d-t-search-for 2 "hey"))
     (with-current-buffer erc-s-buf
@@ -670,8 +658,8 @@ nonzero for this to work."
 
 (ert-deftest erc-d-run-eof-fail ()
   (let (errors)
-    (erc-d-self-with-failure-spy errors '(erc-d--teardown)
-      (erc-d-self-with-server (_ _) eof
+    (erc-d-tests-with-failure-spy errors '(erc-d--teardown)
+      (erc-d-tests-with-server (_ _) eof
         (with-current-buffer (erc-d-t-wait-for 5 (get-buffer "#chan"))
           (erc-d-t-search-for 2 "hey"))
         (erc-d-t-wait-for 10 errors)))
@@ -679,8 +667,8 @@ nonzero for this to work."
                             (cadr (pop errors))))))
 
 (ert-deftest erc-d-run-linger ()
-  (erc-d-self-with-server (dumb-s _) linger
-    (with-current-buffer (erc-d-t-wait-for 3 (get-buffer "#chan"))
+  (erc-d-tests-with-server (dumb-s _) linger
+    (with-current-buffer (erc-d-t-wait-for 6 (get-buffer "#chan"))
       (erc-d-t-search-for 2 "hey"))
     (with-current-buffer (process-buffer dumb-s)
       (erc-d-t-search-for 2 "Lingering for 1.00 seconds"))
@@ -690,10 +678,10 @@ nonzero for this to work."
 (ert-deftest erc-d-run-linger-fail ()
   (let ((erc-server-flood-penalty 0.1)
         errors)
-    (erc-d-self-with-failure-spy
+    (erc-d-tests-with-failure-spy
         errors '(erc-d--teardown erc-d-command)
-      (erc-d-self-with-server (_ _) linger
-        (with-current-buffer (erc-d-t-wait-for 3 (get-buffer "#chan"))
+      (erc-d-tests-with-server (_ _) linger
+        (with-current-buffer (erc-d-t-wait-for 5 (get-buffer "#chan"))
           (erc-d-t-search-for 2 "hey")
           (erc-cmd-MSG "#chan hi"))
         (erc-d-t-wait-for 10 "Bad match" errors)))
@@ -732,6 +720,7 @@ nonzero for this to work."
       (kill-buffer dumb-server-buffer))))
 
 (ert-deftest erc-d-run-drop-direct ()
+  :tags '(:unstable)
   (let* ((dumb-server (erc-d-run "localhost" t 'drop-a 'drop-b))
          (port (process-contact dumb-server :service))
          (dumb-server-buffer (get-buffer "*erc-d-server*"))
@@ -766,8 +755,8 @@ nonzero for this to work."
   (let ((erc-d-linger-secs 1)
         erc-server-auto-reconnect
         errors)
-    (erc-d-self-with-failure-spy errors '(erc-d--teardown erc-d-command)
-      (erc-d-self-with-server (_ erc-server-buffer) no-match
+    (erc-d-tests-with-failure-spy errors '(erc-d--teardown erc-d-command)
+      (erc-d-tests-with-server (_ erc-server-buffer) no-match
         (with-current-buffer erc-server-buffer
           (erc-d-t-search-for 2 "away")
           (erc-cmd-JOIN "#foo")
@@ -778,8 +767,8 @@ nonzero for this to work."
 (ert-deftest erc-d-run-timeout ()
   (let ((erc-d-linger-secs 1)
         err errors)
-    (erc-d-self-with-failure-spy errors '(erc-d--teardown)
-      (erc-d-self-with-server (_ _) timeout
+    (erc-d-tests-with-failure-spy errors '(erc-d--teardown)
+      (erc-d-tests-with-server (_ _) timeout
         (erc-d-t-wait-for 10 "error caught" errors)))
     (setq err (pop errors))
     (should (eq (car err) 'erc-d-timeout))
@@ -788,9 +777,9 @@ nonzero for this to work."
 (ert-deftest erc-d-run-unexpected ()
   (let ((erc-d-linger-secs 2)
         errors)
-    (erc-d-self-with-failure-spy
+    (erc-d-tests-with-failure-spy
         errors '(erc-d--teardown erc-d-command)
-      (erc-d-self-with-server (_ _) unexpected
+      (erc-d-tests-with-server (_ _) unexpected
         (ert-info ("All specs consumed when more input arrives")
           (erc-d-t-wait-for 10 "error caught" (cdr errors)))))
     (should (string-match-p "unexpected.*MODE" (cadr (pop errors))))
@@ -801,7 +790,7 @@ nonzero for this to work."
 (ert-deftest erc-d-run-unexpected-depleted ()
   (let ((erc-d-linger-secs 3)
         errors)
-    (erc-d-self-with-failure-spy errors '(erc-d--teardown erc-d-command)
+    (erc-d-tests-with-failure-spy errors '(erc-d--teardown erc-d-command)
       (let* ((dumb-server-buffer (get-buffer-create "*erc-d-server*"))
              (dumb-server (erc-d-run "localhost" t 'depleted))
              (expect (erc-d-t-make-expecter))
@@ -818,7 +807,7 @@ nonzero for this to work."
                            :service (process-contact dumb-server :service)
                            :host "localhost"))
         (with-current-buffer dumb-server-buffer
-          (funcall expect 3 "Connection"))
+          (funcall expect 3 "open from"))
         (process-send-string client-proc "PASS :changeme\r\n")
         (sleep-for 0.01)
         (process-send-string client-proc "NICK tester\r\n")
@@ -841,14 +830,14 @@ nonzero for this to work."
     (should (string-match-p "unexpected.*BLAH" (cadr (pop errors))))
     (should-not errors)))
 
-(defun erc-d-self--dynamic-match-user (_dialog exchange)
+(defun erc-d-tests--dynamic-match-user (_dialog exchange)
   "Shared pattern/response handler for canned dynamic DIALOG test."
   (should (string= (match-string 1 (erc-d-exchange-request exchange))
                    "tester")))
 
-(defun erc-d-self--run-dynamic ()
+(defun erc-d-tests--run-dynamic ()
   "Perform common assertions for \"dynamic\" dialog."
-  (erc-d-self-with-server (dumb-server erc-server-buffer) dynamic
+  (erc-d-tests-with-server (dumb-server erc-server-buffer) dynamic
     (with-current-buffer (erc-d-t-wait-for 5 (get-buffer "#chan"))
       (erc-d-t-search-for 2 "tester: hey"))
     (with-current-buffer erc-server-buffer
@@ -875,12 +864,12 @@ nonzero for this to work."
           (list :user (lambda (d e)
                         (erc-d-exchange-rebind d e 'nick nick)
                         (erc-d-exchange-rebind d e 'dom dom)
-                        (erc-d-self--dynamic-match-user d e))
+                        (erc-d-tests--dynamic-match-user d e))
                 :mode-user (lambda (d e)
                              (erc-d-exchange-rebind d e 'nick "tester")
                              (erc-d-exchange-rebind d e 'dom dom))))
          (erc-d-server-fqdn "irc.fsf.org"))
-    (erc-d-self--run-dynamic)
+    (erc-d-tests--run-dynamic)
     (should (equal '((dom . match-user) (nick . match-user) (dom . match-user))
                    dynamic-tally))))
 
@@ -903,13 +892,13 @@ nonzero for this to work."
                    (lambda ()
                      (push 'bind-dom tally)
                      (erc-d-exchange-rebind d e 'dom erc-d-server-fqdn)))
-                  (erc-d-self--dynamic-match-user d e))
+                  (erc-d-tests--dynamic-match-user d e))
                 :mode-user
                 (lambda (d e)
                   (erc-d-exchange-rebind d e 'nick "tester")
                   (erc-d-exchange-rebind d e 'dom erc-d-server-fqdn))))
          (erc-d-server-fqdn "irc.fsf.org"))
-    (erc-d-self--run-dynamic)
+    (erc-d-tests--run-dynamic)
     (should (equal '(bind-nick bind-dom) tally))))
 
 (ert-deftest erc-d-run-dynamic-runtime-stub ()
@@ -917,8 +906,8 @@ nonzero for this to work."
         (erc-d-match-handlers
          (list :pass (lambda (d _e)
                        (erc-d-load-replacement-dialog d 'dynamic-foonet))))
-        (erc-d-self-with-server-password "foonet:changeme"))
-    (erc-d-self-with-server (_ erc-server-buffer)
+        (erc-d-tests-with-server-password "foonet:changeme"))
+    (erc-d-tests-with-server (_ erc-server-buffer)
         (dynamic-stub dynamic-foonet)
       (with-current-buffer (erc-d-t-wait-for 3 (get-buffer "#chan"))
         (erc-d-t-search-for 2 "alice:")
@@ -936,8 +925,8 @@ nonzero for this to work."
          (list :pass (lambda (d _e)
                        (erc-d-load-replacement-dialog
                         d 'dynamic-barnet 1))))
-        (erc-d-self-with-server-password "barnet:changeme"))
-    (erc-d-self-with-server (_ erc-server-buffer)
+        (erc-d-tests-with-server-password "barnet:changeme"))
+    (erc-d-tests-with-server (_ erc-server-buffer)
         (dynamic-stub dynamic-barnet)
       (with-current-buffer (erc-d-t-wait-for 3 (get-buffer "#chan"))
         (erc-d-t-search-for 2 "joe:")
@@ -1045,7 +1034,7 @@ nonzero for this to work."
         (erc-d-tmpl-vars
          `((now . ,(lambda () (format-time-string "%FT%T.%3NZ" nil t)))))
         erc-server-auto-reconnect)
-    (erc-d-self-with-server (_ erc-server-buffer) fuzzy
+    (erc-d-tests-with-server (_ erc-server-buffer) fuzzy
       (with-current-buffer erc-server-buffer
         (erc-d-t-search-for 2 "away")
         (goto-char erc-input-marker)
@@ -1064,7 +1053,7 @@ nonzero for this to work."
         (erc-d-linger-secs 1.2)
         (expect (erc-d-t-make-expecter))
         erc-server-auto-reconnect)
-    (erc-d-self-with-server (_ erc-server-buffer) no-block
+    (erc-d-tests-with-server (_ erc-server-buffer) no-block
       (with-current-buffer erc-server-buffer
         (funcall expect 2 "away")
         (funcall expect 1 erc-prompt)
@@ -1085,7 +1074,7 @@ nonzero for this to work."
           (should-not (search-forward "<bob> I am heard" nil t))
           (funcall expect 1.5 "<bob> I am heard"))))))
 
-(defun erc-d-self--run-proxy-direct (dumb-server dumb-server-buffer port)
+(defun erc-d-tests--run-proxy-direct (dumb-server dumb-server-buffer port)
   "Start DUMB-SERVER with DUMB-SERVER-BUFFER and PORT.
 These are steps shared by in-proc and subproc variants testing a
 bouncer-like setup."
@@ -1112,7 +1101,7 @@ bouncer-like setup."
                       :service port
                       :host "localhost"))
     (with-current-buffer dumb-server-buffer
-      (funcall expect 3 "Connection"))
+      (funcall expect 3 "open from"))
     (process-send-string client-foo "PASS :foo:changeme\r\n")
     (process-send-string client-bar "PASS :bar:changeme\r\n")
     (sleep-for 0.01)
@@ -1167,9 +1156,9 @@ bouncer-like setup."
          (port (process-contact dumb-server :service)))
     (with-current-buffer dumb-server-buffer
       (erc-d-t-search-for 3 "Starting"))
-    (erc-d-self--run-proxy-direct dumb-server dumb-server-buffer port)))
+    (erc-d-tests--run-proxy-direct dumb-server dumb-server-buffer port)))
 
-(cl-defun erc-d-self--start-server (&key dialogs buffer linger program libs)
+(cl-defun erc-d-tests--start-server (&key dialogs buffer linger program libs)
   "Start and return a server in a subprocess using BUFFER and PORT.
 DIALOGS are symbols representing the base names of dialog files in
 `erc-d-u-canned-dialog-dir'.  LIBS are extra files to load."
@@ -1208,24 +1197,24 @@ DIALOGS are symbols representing the base names of dialog files in
          (program `(setq erc-d-tmpl-vars '((fqdn . ,fqdn)
                                            (net . ,net)
                                            (network . (group (+ alpha))))))
-         (port (erc-d-self--start-server
+         (port (erc-d-tests--start-server
                 :linger 0.3
                 :program program
                 :buffer buffer
                 :dialogs '(proxy-foonet proxy-barnet)))
          (server (pop port)))
-    (erc-d-self--run-proxy-direct server buffer port)))
+    (erc-d-tests--run-proxy-direct server buffer port)))
 
 (ert-deftest erc-d-run-proxy-direct-subprocess-lib ()
   (let* ((buffer (get-buffer-create "*erc-d-server*"))
          (lib (expand-file-name "proxy-subprocess.el"
-                                erc-d-self--resources-directory))
-         (port (erc-d-self--start-server :linger 0.3
-                                         :buffer buffer
-                                         :dialogs '(proxy-foonet proxy-barnet)
-                                         :libs (list lib)))
+                                (ert-resource-directory)))
+         (port (erc-d-tests--start-server :linger 0.3
+                                          :buffer buffer
+                                          :dialogs '(proxy-foonet proxy-barnet)
+                                          :libs (list lib)))
          (server (pop port)))
-    (erc-d-self--run-proxy-direct server buffer port)))
+    (erc-d-tests--run-proxy-direct server buffer port)))
 
 (ert-deftest erc-d-run-no-pong ()
   (let* (erc-d-auto-pong
@@ -1250,7 +1239,7 @@ DIALOGS are symbols representing the base names of dialog files in
                        :service (process-contact dumb-server :service)
                        :host "localhost"))
     (with-current-buffer dumb-server-buffer
-      (funcall expect 3 "Connection"))
+      (funcall expect 3 "open from"))
     (process-send-string client-proc "PASS :changeme\r\nNICK tester\r\n")
     (sleep-for 0.01)
     (process-send-string client-proc "USER user 0 * :tester\r\n")
@@ -1279,7 +1268,7 @@ DIALOGS are symbols representing the base names of dialog files in
   (let ((erc-server-flood-penalty 0)
         (expect (erc-d-t-make-expecter))
         erc-d-linger-secs)
-    (erc-d-self-with-server (_ erc-server-buffer) incremental
+    (erc-d-tests-with-server (_ erc-server-buffer) incremental
       (with-current-buffer erc-server-buffer
         (funcall expect 3 "marked as being away"))
       (with-current-buffer erc-server-buffer
@@ -1327,4 +1316,4 @@ DIALOGS are symbols representing the base names of dialog files in
             (kill-buffer dumb-server-buffer)))
       (delete-file sock))))
 
-;;; erc-d-self.el ends here
+;;; erc-d-tests.el ends here

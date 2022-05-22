@@ -55,10 +55,15 @@
 Every element in the alist has the form (SERVER . CHANNELS).
 SERVER is a regexp matching the server, and channels is the list
 of channels to join.  SERVER can also be a symbol, in which case
-it is matched against the value of `erc-network' instead of
+it's matched against a non-nil `:id' passed to `erc' or `erc-tls'
+when connecting or the value of the current `erc-network' instead of
 `erc-server-announced-name' or `erc-session-server' (this can be
 useful when connecting to an IRC proxy that relays several
 networks under the same server).
+
+Note that for historical reasons, this option is mutated at runtime,
+which is regrettable but here to stay.  Please double check the value
+before saving it to a `custom-file'.
 
 If the channel(s) require channel keys for joining, the passwords
 are found via auth-source.  For instance, if you use ~/.authinfo
@@ -121,14 +126,13 @@ This is called from a timer set up by `erc-autojoin-channels'."
       (erc-autojoin-channels server nick))))
 
 (defun erc-autojoin-server-match (candidate)
-  "Match the current session ID or server against CANDIDATE.
+  "Match the current network ID or server against CANDIDATE.
 CANDIDATE is a key from `erc-autojoin-channels-alist'.  Return the
-matching entity, either a string or a non-nil symbol, in the case of a
-network or a session ID.  Return nil on failure."
+matching entity, either a string or a non-nil symbol (in the case of a
+network or a network ID).  Return nil on failure."
   (if (symbolp candidate)
-      (when-let ((esid (erc-networks--id-symbol erc-networks--id))
-                 ((eq esid candidate)))
-        esid)
+      (eq (or (erc-networks--id-given erc-networks--id) (erc-network))
+          candidate)
     (when (stringp candidate)
       (string-match-p candidate (or erc-server-announced-name
                                     erc-session-server)))))
@@ -171,19 +175,29 @@ Respects `erc-autojoin-domain-only'."
 	(match-string 1 server)
       server)))
 
-(defun erc-autojoin-add (proc parsed)
-  "Add the channel being joined to `erc-autojoin-channels-alist'."
+(defun erc-autojoin--mutate (proc parsed remove)
   (when-let* ((nick (car (erc-parse-user (erc-response.sender parsed))))
               ((erc-current-nick-p nick))
               (chnl (car (erc-response.command-args parsed)))
               (elem (or (and (erc--valid-local-channel-p chnl)
                              (regexp-quote erc-server-announced-name))
-                        (erc-networks--id-symbol erc-networks--id)
+                        (erc-networks--id-given erc-networks--id)
+                        (erc-network)
                         (with-current-buffer (process-buffer proc)
-                          (erc-autojoin-current-server)))))
-    (cl-pushnew chnl (alist-get elem erc-autojoin-channels-alist
-                                nil nil (if (symbolp elem) #'eq #'equal))
-                :test #'equal))
+                          (erc-autojoin-current-server))))
+              (test (if (symbolp elem) #'eq #'equal)))
+    (if remove
+        (let ((cs (delete chnl (assoc-default elem erc-autojoin-channels-alist
+                                              test))))
+          (setf (alist-get elem erc-autojoin-channels-alist nil (null cs) test)
+                cs))
+      (cl-pushnew chnl
+                  (alist-get elem erc-autojoin-channels-alist nil nil test)
+                  :test #'equal))))
+
+(defun erc-autojoin-add (proc parsed)
+  "Add the channel being joined to `erc-autojoin-channels-alist'."
+  (erc-autojoin--mutate proc parsed nil)
   ;; We must return nil to tell ERC to continue running the other
   ;; functions.
   nil)
@@ -192,19 +206,7 @@ Respects `erc-autojoin-domain-only'."
 
 (defun erc-autojoin-remove (proc parsed)
   "Remove the channel being left from `erc-autojoin-channels-alist'."
-  (when-let* ((nick (car (erc-parse-user (erc-response.sender parsed))))
-              ((erc-current-nick-p nick))
-              (chnl (car (erc-response.command-args parsed)))
-              (elem (or (and (erc--valid-local-channel-p chnl)
-                             (regexp-quote erc-server-announced-name))
-                        (erc-networks--id-symbol erc-networks--id)
-                        (with-current-buffer (process-buffer proc)
-                          (erc-autojoin-current-server))))
-              (test (if (symbolp elem) #'eq #'equal)))
-    (let ((chans (delete chnl (assoc-default elem erc-autojoin-channels-alist
-                                             test))))
-      (setf (alist-get elem erc-autojoin-channels-alist nil (null chans) test)
-            chans)))
+  (erc-autojoin--mutate proc parsed 'remove)
   ;; We must return nil to tell ERC to continue running the other
   ;; functions.
   nil)

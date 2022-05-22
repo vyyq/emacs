@@ -27,7 +27,7 @@
  (0 ":irc.foonet.org 353 tester = #chan :alice tester @bob")
  (0 ":irc.foonet.org 366 tester #chan :End of NAMES list"))
 
-((mode 4 "MODE #chan")
+((mode 10 "MODE #chan")
  (0 ":irc.foonet.org 324 tester #chan +nt")
  (0 ":irc.foonet.org 329 tester #chan 1620104779")
  (0.1 ":bob!~u@rz2v467q4rwhy.irc PRIVMSG #chan :tester, welcome!")

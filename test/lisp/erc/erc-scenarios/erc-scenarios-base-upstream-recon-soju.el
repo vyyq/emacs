@@ -1,4 +1,4 @@
-;;; erc-scenarios-join-netid-newcmd.el --- join netid newcmd scenarios -*- lexical-binding: t -*-
+;;; erc-scenarios-upstream-recon-soju.el --- Upstream soju -*- lexical-binding: t -*-
 
 ;; Copyright (C) 2022 Free Software Foundation, Inc.
 ;;
@@ -18,20 +18,25 @@
 ;; along with this program.  If not, see
 ;; <https://www.gnu.org/licenses/>.
 
+;; Commentary:
+;;
+;; These concern the loss and recovery of a proxy's IRC-side connection.
+
 (require 'ert-x)
 (eval-and-compile
   (let ((load-path (cons (ert-resource-directory) load-path)))
     (require 'erc-scenarios-common)))
 
-(ert-deftest erc-scenarios-join-netid--newcmd ()
-  :tags '(:expensive-test)
-  (let ((connect (lambda ()
-                   (erc :server "127.0.0.1"
-                        :port (with-current-buffer "foonet"
-                                (process-contact erc-server-process :service))
-                        :nick "tester"
-                        :password "foonet:changeme"
-                        :full-name "tester"))))
-    (erc-scenarios-common--join-network-id connect nil nil)))
+(ert-deftest erc-scenarios-upstream-recon--soju ()
+  (erc-scenarios-common--upstream-reconnect
+   (lambda ()
+     (with-current-buffer "foonet"
+       (erc-d-t-search-for 1 "disconnected from foonet")
+       (erc-d-t-search-for 1 "connected from foonet"))
+     (with-current-buffer "barnet"
+       (erc-d-t-search-for 1 "disconnected from barnet")
+       (erc-d-t-search-for 1 "connected from barnet")))
+   'soju-foonet
+   'soju-barnet))
 
-;;; erc-scenarios-join-netid-newcmd.el ends here
+;;; erc-scenarios-upstream-recon-soju.el ends here

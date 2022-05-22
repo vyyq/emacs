@@ -1,6 +1,6 @@
 ;;; erc-scenarios-common.el --- common helpers for ERC scenarios -*- lexical-binding: t -*-
 
-;; Copyright (C) 2021 Free Software Foundation, Inc.
+;; Copyright (C) 2022 Free Software Foundation, Inc.
 ;;
 ;; This file is part of GNU Emacs.
 ;;
@@ -318,9 +318,9 @@ buffer-naming collisions involving bouncers in ERC."
            ;; Simulate disconnection and `erc-server-auto-reconnect'
            (ert-info ("Reconnect to foonet and barnet back-to-back")
              (with-current-buffer (if foo-id "oofnet" "foonet")
-               (erc-d-t-wait-for 5 (erc-server-process-alive)))
+               (erc-d-t-wait-for 10 (erc-server-process-alive)))
              (with-current-buffer (if bar-id "rabnet" "barnet")
-               (erc-d-t-wait-for 5 (erc-server-process-alive))))
+               (erc-d-t-wait-for 10 (erc-server-process-alive))))
 
            (ert-info ("#chan@foonet is exclusive to foonet")
              (with-current-buffer (if foo-id "#chan@oofnet" "#chan@foonet")
@@ -351,6 +351,62 @@ buffer-naming collisions involving bouncers in ERC."
      'foonet-drop 'barnet-drop
      'stub-again 'stub-again
      'foonet-again 'barnet-again)))
+
+(defun erc-scenarios-common--upstream-reconnect (test &rest dialogs)
+  (erc-scenarios-common-with-cleanup
+      ((erc-scenarios-common-dialog "base/upstream-reconnect")
+       (erc-d-t-cleanup-sleep-secs 1)
+       (erc-server-flood-penalty 0.1)
+       (dumb-server (apply #'erc-d-run "localhost" t dialogs))
+       (port (process-contact dumb-server :service))
+       (expect (erc-d-t-make-expecter)))
+
+    (ert-info ("Connect to foonet")
+      (with-current-buffer (erc :server "127.0.0.1"
+                                :port port
+                                :nick "tester"
+                                :user "tester@vanilla/foonet"
+                                :password "changeme"
+                                :full-name "tester")
+        (erc-scenarios-common-assert-initial-buf-name nil port)
+        (erc-d-t-wait-for 3 (eq (erc-network) 'foonet))
+        (erc-d-t-wait-for 3 (string= (buffer-name) "foonet"))
+        (funcall expect 5 "foonet")))
+
+    (ert-info ("Join #chan@foonet")
+      (with-current-buffer (erc-d-t-wait-for 5 (get-buffer "#chan"))
+        (funcall expect 5 "<alice>")))
+
+    (ert-info ("Connect to barnet")
+      (with-current-buffer (erc :server "127.0.0.1"
+                                :port port
+                                :nick "tester"
+                                :user "tester@vanilla/barnet"
+                                :password "changeme"
+                                :full-name "tester")
+        (erc-scenarios-common-assert-initial-buf-name nil port)
+        (erc-d-t-wait-for 6 (eq (erc-network) 'barnet))
+        (erc-d-t-wait-for 3 (string= (buffer-name) "barnet"))
+        (funcall expect 5 "barnet")))
+
+    (ert-info ("Server buffers are unique, no names based on IPs")
+      (should-not (erc-scenarios-common-buflist "127.0.0.1")))
+
+    (with-current-buffer (erc-d-t-wait-for 5 (get-buffer "#chan@foonet"))
+      (funcall expect 5 "#chan was created on ")
+      (ert-info ("Joined again #chan@foonet")
+        (funcall expect 10 "#chan was created on "))
+      (while (accept-process-output erc-server-process))
+      (funcall expect 1 "My lord, in heart"))
+
+    (with-current-buffer (erc-d-t-wait-for 5 (get-buffer "#chan@barnet"))
+      (funcall expect 5 "#chan was created on ")
+      (ert-info ("Joined again #chan@barnet")
+        (funcall expect 10 "#chan was created on "))
+      (while (accept-process-output erc-server-process))
+      (funcall expect 10 "Go to; farewell"))
+
+    (funcall test)))
 
 ;; XXX this is okay, but we also need to check that target buffers are
 ;; already associated with a new process *before* a JOIN is sent by a
@@ -388,7 +444,7 @@ Bug#48598: 28.0.50; buffer-naming collisions involving bouncers in ERC."
                                            :id foo-id))
         (setq erc-server-process-foo erc-server-process)
         (erc-scenarios-common-assert-initial-buf-name foo-id port)
-        (erc-d-t-wait-for 1 (eq (erc-network) 'foonet))
+        (erc-d-t-wait-for 5 (eq (erc-network) 'foonet))
         (funcall expect 5 "foonet")))
 
     (ert-info ("Join #chan, find sentinel, quit")

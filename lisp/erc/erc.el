@@ -134,6 +134,7 @@
 (defvar erc--server-last-reconnect-count)
 (defvar erc--server-reconnecting)
 (defvar erc-channel-members-changed-hook)
+(defvar erc-network)
 (defvar erc-networks--id)
 (defvar erc-server-367-functions)
 (defvar erc-server-announced-name)
@@ -1675,6 +1676,14 @@ effect when `erc-join-buffer' is set to `frame'."
            (erc-channel-p (erc-default-target))))
         (t nil)))
 
+;; For the sake of compatibility, a historical quirk concerning this
+;; option, when nil, has been preserved: all buffers are suffixed with
+;; the original dialed host name, which is usually something like
+;; irc.libera.chat.  Collisions are handled by adding a uniquifying
+;; numeric suffix of the form <N>.  Note that channel reassociation
+;; behavior involving this option (when nil) was inverted in 28.1 (ERC
+;; 5.4 and 5.4.1).  This was regrettable and has since been undone.
+
 (defcustom erc-reuse-buffers t
   "If nil, create new buffers on joining a channel/query.
 If non-nil, a new buffer will only be created when you join
@@ -1683,6 +1692,9 @@ open with nicks of the same name on different servers.  Otherwise,
 the existing buffers will be reused."
   :group 'erc-buffers
   :type 'boolean)
+
+(make-obsolete-variable 'erc-reuse-buffers
+                        "old behavior when t now permanent" "29.1")
 
 (defun erc-normalize-port (port)
   "Normalize the port specification PORT to integer form.
@@ -1734,8 +1746,7 @@ param TARGET (retained for compatibility).  Whenever possibly, prefer
 returning TGT-INFO's string unmodified.  But when a case-insensitive
 collision prevents that, return target@ID when ID is non-nil or
 target@network otherwise after renaming the conflicting buffer in the
-same manner.  If the `networks' module isn't loaded, return target or
-target<n>."
+same manner."
   (when target ; compat
     (setq tgt-info (erc--target-from-string target)))
   (if tgt-info
@@ -1744,24 +1755,34 @@ target<n>."
                        (erc-networks--reconcile-buffer-names tgt-info
                                                              erc-networks--id)
                      (erc--target-string tgt-info))))
-        (if (and esid erc-reuse-buffers)
+        (if (and esid (with-suppressed-warnings ((obsolete erc-reuse-buffers))
+                        erc-reuse-buffers))
             name
           (generate-new-buffer-name name)))
-    (if id
+    (if (and (with-suppressed-warnings ((obsolete erc-reuse-buffers))
+               erc-reuse-buffers)
+             id)
         (progn
           (when-let* ((buf (get-buffer (symbol-name id)))
                       ((erc-server-process-alive buf)))
             (user-error  "Session with ID %S already exists" id))
           (symbol-name id))
       (generate-new-buffer-name (if (and server port)
-                                    (format "%s:%s" server port)
+                                    (if (with-suppressed-warnings
+                                            ((obsolete erc-reuse-buffers))
+                                          erc-reuse-buffers)
+                                        (format "%s:%s" server port)
+                                      (format "%s:%s/%s" server port server))
                                   (or server port))))))
 
 (defun erc-get-buffer-create (server port target &optional tgt-info id)
   "Create a new buffer based on the arguments."
   (when target ; compat
     (setq tgt-info (erc--target-from-string target)))
-  (if (and erc--server-reconnecting (not tgt-info))
+  (if (and erc--server-reconnecting
+           (not tgt-info)
+           (with-suppressed-warnings ((obsolete erc-reuse-buffers))
+             erc-reuse-buffers))
       (current-buffer)
     (get-buffer-create
      (erc-generate-new-buffer-name server port nil tgt-info id))))
@@ -1927,6 +1948,9 @@ all channel buffers on all servers."
 ;; (QUERY . bob) to serve as the list's head, was either never fully
 ;; integrated or was partially clobbered prior to the introduction of
 ;; version control.  But vestiges remain (see `erc-dcc-chat-mode').
+;; And despite appearances, no evidence has emerged that ERC ever
+;; supported one-to-many target buffers.  If such a thing was aspired
+;; to, it was never realized.
 ;;
 ;; New library code should use the `erc--target' struct instead.
 ;; Third-party code can continue to use this until a getter for
@@ -2127,7 +2151,10 @@ Returns the buffer for the given server or channel."
          (buffer (erc-get-buffer-create server port nil target id))
          (old-buffer (current-buffer))
          old-point
-         (continued-session erc--server-reconnecting))
+         (continued-session (and erc--server-reconnecting
+                                 (with-suppressed-warnings
+                                     ((obsolete erc-reuse-buffers))
+                                   erc-reuse-buffers))))
     (when connect (run-hook-with-args 'erc-before-connect server port nick))
     (erc-update-modules)
     (set-buffer buffer)
@@ -2157,7 +2184,9 @@ Returns the buffer for the given server or channel."
     (set-marker erc-insert-marker (point))
     ;; stack of default recipients
     (setq erc-default-recipients tgt-list)
-    (setq erc--target target)
+    (when target
+      (setq erc--target target
+            erc-network (erc-network)))
     (setq erc-server-current-nick nil)
     ;; Initialize erc-server-users and erc-channel-users
     (if connect
@@ -3319,34 +3348,32 @@ For a list of user commands (/join /part, ...):
 (defalias 'erc-cmd-H #'erc-cmd-HELP)
 (put 'erc-cmd-HELP 'process-not-needed t)
 
-(defcustom erc-auth-source-parameters-server-function
-  #'erc-auth-source-determine-params-merge
-  "Server-password filter for `auth-source-search'.
-Called with keyword parameters known to `auth-source-search' and
-relevant to an opening \"PASS\" command, if any.  In return, ERC expects
-an optionally modified set of parameters to use both for the auth-source
-query and for narrowing its results.  A value of nil tells ERC to omit
-the \"PASS\" command completely.  An explicit `:password' argument to
-entry-point commands `erc' and `erc-tls' also inhibits look-up.  See
-info node `(erc) Connecting' for details."
+(defcustom erc-auth-source-server-function #'erc-auth-source-search
+  "Function to query auth-source for a server password.
+Called with a subset of keyword parameters known to `auth-source-search'
+and relevant to an opening \"PASS\" command, if any.  In return, ERC
+expects a string to send as the server password, or nil, to skip the
+\"PASS\" command completely.  An explicit `:password' argument to
+entry-point commands `erc' and `erc-tls' also inhibits lookup, as does
+setting this option to nil.  See info node `(erc) Connecting' for
+details."
   :package-version '(ERC . "5.4.1") ; FIXME update when publishing to ELPA
   :group 'erc
-  :type '(choice (const erc-auth-source-determine-params-merge)
+  :type '(choice (const erc-auth-source-search)
                  (const nil)
                  function))
 
-(defcustom erc-auth-source-parameters-join-function
-  #'erc-auth-source-determine-params-merge
-  "Channel-join filter for `auth-source-search'.
-Called with keyword parameters known to `auth-source-search' and
-relevant to joining a password-protected channel.  In return, ERC
-expects an optionally modified set of parameters to use both for the
-auth-source query and for narrowing its results.  A value of nil tells
-ERC to forgo consulting auth-source for channel keys.  For more
-information, see info node `(erc) Connecting'."
+(defcustom erc-auth-source-join-function #'erc-auth-source-search
+  "Function to query auth-source on joining a channel.
+Called with a subset of keyword arguments known to `auth-source-search'
+and relevant to joining a password-protected channel.  In return, ERC
+expects a string to use as the channel \"key\", or nil to just join the
+channel normally.  Setting the option itself to nil tells ERC to always
+forgo consulting auth-source for channel keys.  For more information,
+see info node `(erc) Connecting'."
   :package-version '(ERC . "5.4.1") ; FIXME update when publishing to ELPA
   :group 'erc
-  :type '(choice (const erc-auth-source-determine-params-merge)
+  :type '(choice (const erc-auth-source-search)
                  (const nil)
                  function))
 
@@ -3367,7 +3394,7 @@ information, see info node `(erc) Connecting'."
           (cons :port (delq nil ports))
           (cons :require '(:secret)))))
 
-(defun erc-auth-source-determine-params-merge (&rest plist)
+(defun erc--auth-source-determine-params-merge (&rest plist)
   "Return a plist of merged keyword args to pass to `auth-source-search'.
 Combine items in PLIST with others derived from the current connection
 context, but prioritize the former.  For keys not present in PLIST,
@@ -3385,8 +3412,25 @@ the announced name in both cases."
 
 (defun erc--auth-source-search (&rest defaults)
   "Ask auth-source for a secret and return it if found.
-Use DEFAULTS as arguments for querying auth-source and as a guide for
-narrowing the results.  Return a string if found or nil otherwise."
+Use DEFAULTS as keyword arguments for querying auth-source and as a
+guide for narrowing results.  Return a string if found or nil otherwise.
+The ordering of DEFAULTS influences how results are filtered, as does
+the ordering of the members of any individual composite values.  If
+necessary, the former takes priority.  For example, if DEFAULTS were to
+contain
+
+  :host (\"foo\" \"bar\") :port (\"123\" \"456\")
+
+the secret from an auth-source entry of host foo and port 456 would be
+chosen over another of host bar and port 123.  However, if DEFAULTS
+looked like
+
+  :port (\"123\" \"456\") :host (\"foo\" \"bar\")
+
+the opposite would be true.  In both cases, two entries with the same
+host but different ports would result in the one with port 123 getting
+the nod.  Much the same would happen for entries sharing only a port:
+the one with host foo would win."
   (when-let*
       ((priority (map-keys defaults))
        (test (lambda (a b)
@@ -3408,19 +3452,26 @@ narrowing the results.  Return a string if found or nil otherwise."
                 (secret (plist-get (car sorted) :secret)))
       (if (functionp secret) (funcall secret) secret))))
 
+(defun erc-auth-source-search (&rest plist)
+  "Call `auth-source-search', possibly with keyword params in PLIST."
+  ;; These exist as separate helpers in case folks should find them
+  ;; useful.  If that's you, please request that they be exported.
+  (apply #'erc--auth-source-search
+         (apply #'erc--auth-source-determine-params-merge plist)))
+
 (defun erc-server-join-channel (server channel &optional secret)
   "Join CHANNEL, optionally with SECRET.
-Without SECRET, consult auth source, using SERVER if non-nil."
-  (unless (or secret (not erc-auth-source-parameters-join-function))
+Without SECRET, consult auth-source, possibly passing SERVER as the
+`:host' query parameter."
+  (unless (or secret (not erc-auth-source-join-function))
     (unless server
       (when (and erc-server-announced-name
                  (erc--valid-local-channel-p channel))
         (setq server erc-server-announced-name)))
-    (let ((args (apply erc-auth-source-parameters-join-function
-                       `(,@(and server (list :host server)) :user channel))))
-      (setq secret (apply #'erc--auth-source-search args))))
+    (setq secret (apply erc-auth-source-join-function
+                        `(,@(and server (list :host server)) :user ,channel))))
   (erc-log (format "cmd: JOIN: %s" channel))
-  (erc-server-send (concat "JOIN " channel (when secret (concat " " secret)))))
+  (erc-server-send (concat "JOIN " channel (and secret (concat " " secret)))))
 
 (defun erc--valid-local-channel-p (channel)
   "Non-nil when channel is server-local on a network that allows them."
@@ -3863,12 +3914,7 @@ If S is non-nil, it will be used as the quit reason."
   "Zippy quit message.
 
 If S is non-nil, it will be used as the quit reason."
-  (or s
-      (if (fboundp 'yow)
-          (if (>= emacs-major-version 28)
-              (string-replace "\n" "" (yow))
-            (replace-regexp-in-string "\n" "" (yow)))
-        (erc-quit/part-reason-default))))
+  (or s (erc-quit/part-reason-default)))
 
 (make-obsolete 'erc-quit-reason-zippy "it will be removed." "24.4")
 
@@ -3892,12 +3938,7 @@ If S is non-nil, it will be used as the part reason."
   "Zippy part message.
 
 If S is non-nil, it will be used as the quit reason."
-  (or s
-      (if (fboundp 'yow)
-          (if (>= emacs-major-version 28)
-              (string-replace "\n" "" (yow))
-            (replace-regexp-in-string "\n" "" (yow)))
-        (erc-quit/part-reason-default))))
+  (or s (erc-quit/part-reason-default)))
 
 (make-obsolete 'erc-part-reason-zippy "it will be removed." "24.4")
 
@@ -3986,9 +4027,13 @@ the message given by REASON."
       (when process
         (delete-process process))
       (erc-server-reconnect)
-      (with-suppressed-warnings ((obsolete erc-server-reconnecting))
-        (setq erc-server-reconnecting nil))
-      (setq erc--server-reconnecting nil)))
+      (with-suppressed-warnings ((obsolete erc-server-reconnecting)
+                                 ((obsolete erc-reuse-buffers)))
+        (if erc-reuse-buffers
+            (progn (cl-assert (not erc--server-reconnecting))
+                   (cl-assert (not erc-server-reconnecting)))
+          (setq erc--server-reconnecting nil
+                erc-server-reconnecting nil)))))
   t)
 (put 'erc-cmd-RECONNECT 'process-not-needed t)
 
@@ -6464,13 +6509,10 @@ non-nil value is found.
 
 (defun erc--compute-server-password (password nick)
   "Maybe provide a PASSWORD argument for the IRC \"PASS\" command.
-Use NICK for the user field when querying auth-source.  Defer to
-`erc-auth-source-parameters-server-function' for the host param."
-  (or password
-      (and erc-auth-source-parameters-server-function
-           (apply #'erc--auth-source-search
-                  (funcall erc-auth-source-parameters-server-function
-                           :user nick)))))
+When `erc-auth-source-server-function' is non-nil, call it with NICK for
+the user field and use whatever it returns as the server password."
+  (or password (and erc-auth-source-server-function
+                    (funcall erc-auth-source-server-function :user nick))))
 
 (defun erc-compute-full-name (&optional full-name)
   "Return user's full name.

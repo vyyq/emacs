@@ -1,6 +1,6 @@
 ;;; erc-networks-tests.el --- Tests for erc-networks.  -*- lexical-binding:t -*-
 
-;; Copyright (C) 2020-2021 Free Software Foundation, Inc.
+;; Copyright (C) 2020-2022 Free Software Foundation, Inc.
 
 ;; This file is part of GNU Emacs.
 ;;
@@ -20,7 +20,6 @@
 ;;; Code:
 
 (require 'ert-x) ; cl-lib
-
 (require 'erc-networks)
 
 (defun erc-networks-tests--create-dead-proc (&optional buf)
@@ -33,6 +32,7 @@
     (set-process-query-on-exit-flag proc nil)
     proc))
 
+;; When we drop 27, call `get-buffer-create with INHIBIT-BUFFER-HOOKS.
 (defun erc-networks-tests--clean-bufs ()
   (let (erc-kill-channel-hook
         erc-kill-server-hook
@@ -55,24 +55,19 @@
                    (make-erc-networks--id-fixed :ts (float-time)
                                                 :symbol 'foo)))
 
-    ;; Dynamic
+    ;; Eliding
     (let* ((erc-network 'FooNet)
            (erc-server-current-nick "Joe")
            (identity (erc-networks--id-create nil)))
 
-      (should (equal identity
-                     #s(erc-networks--id-telescopic 0.0 FooNet
-                                                    [FooNet "joe"] 1)))
-
-      (should (equal (erc-networks--id-telescopic-grow-id identity)
-                     'FooNet/joe))
-      (should (equal identity
-                     #s(erc-networks--id-telescopic 0.0 FooNet/joe
-                                                    [FooNet "joe"] 2)))
-      (should-not (erc-networks--id-telescopic-grow-id identity))
-      (should (equal identity
-                     #s(erc-networks--id-telescopic 0.0 FooNet/joe
-                                                    [FooNet "joe"] 2))))
+      (should (equal identity #s(erc-networks--id-eliding 0.0 FooNet
+                                                          [FooNet "joe"] 1)))
+      (should (equal (erc-networks--id-eliding-grow-id identity) 'FooNet/joe))
+      (should (equal identity #s(erc-networks--id-eliding 0.0 FooNet/joe
+                                                          [FooNet "joe"] 2)))
+      (should-not (erc-networks--id-eliding-grow-id identity))
+      (should (equal identity #s(erc-networks--id-eliding 0.0 FooNet/joe
+                                                          [FooNet "joe"] 2))))
 
     ;; Compat
     (with-current-buffer (get-buffer-create "fake.chat")
@@ -95,32 +90,44 @@
                                                 :symbol 'foo)))
     (should (equal (erc-networks--id-create [h i])
                    (make-erc-networks--id-fixed :ts (float-time)
-                                                :symbol (quote \[h\ \i\]))))))
+                                                :symbol (quote \[h\ \i\]))))
 
-(ert-deftest erc-networks--id-telescopic-prefix-length ()
-  (should-not (erc-networks--id-telescopic-prefix-length
-               (make-erc-networks--id-telescopic)
-               (make-erc-networks--id-telescopic)))
+    (with-current-buffer (get-buffer-create "foo")
+      (let ((expected (make-erc-networks--id-fixed :ts (float-time)
+                                                   :symbol 'foo)))
+        (with-suppressed-warnings ((obsolete erc-rename-buffers))
+          (let (erc-rename-buffers)
+            (should (equal (erc-networks--id-create nil) expected))))
+        (with-suppressed-warnings ((obsolete erc-reuse-buffers))
+          (let (erc-reuse-buffers)
+            (should (equal (erc-networks--id-create nil) expected))
+            (should (equal (erc-networks--id-create 'bar) expected)))))
+      (kill-buffer))))
 
-  (should-not (erc-networks--id-telescopic-prefix-length
-               (make-erc-networks--id-telescopic :parts [1 2])
-               (make-erc-networks--id-telescopic :parts [2 3])))
+(ert-deftest erc-networks--id-eliding-prefix-length ()
+  (should-not (erc-networks--id-eliding-prefix-length
+               (make-erc-networks--id-eliding)
+               (make-erc-networks--id-eliding)))
 
-  (should (= 1 (erc-networks--id-telescopic-prefix-length
-                (make-erc-networks--id-telescopic :parts [1])
-                (make-erc-networks--id-telescopic :parts [1 2]))))
+  (should-not (erc-networks--id-eliding-prefix-length
+               (make-erc-networks--id-eliding :parts [1 2])
+               (make-erc-networks--id-eliding :parts [2 3])))
 
-  (should (= 1 (erc-networks--id-telescopic-prefix-length
-                (make-erc-networks--id-telescopic :parts [1 2])
-                (make-erc-networks--id-telescopic :parts [1 3]))))
+  (should (= 1 (erc-networks--id-eliding-prefix-length
+                (make-erc-networks--id-eliding :parts [1])
+                (make-erc-networks--id-eliding :parts [1 2]))))
 
-  (should (= 2 (erc-networks--id-telescopic-prefix-length
-                (make-erc-networks--id-telescopic :parts [1 2])
-                (make-erc-networks--id-telescopic :parts [1 2]))))
+  (should (= 1 (erc-networks--id-eliding-prefix-length
+                (make-erc-networks--id-eliding :parts [1 2])
+                (make-erc-networks--id-eliding :parts [1 3]))))
 
-  (should (= 1 (erc-networks--id-telescopic-prefix-length
-                (make-erc-networks--id-telescopic :parts ["1"])
-                (make-erc-networks--id-telescopic :parts ["1"])))))
+  (should (= 2 (erc-networks--id-eliding-prefix-length
+                (make-erc-networks--id-eliding :parts [1 2])
+                (make-erc-networks--id-eliding :parts [1 2]))))
+
+  (should (= 1 (erc-networks--id-eliding-prefix-length
+                (make-erc-networks--id-eliding :parts ["1"])
+                (make-erc-networks--id-eliding :parts ["1"])))))
 
 (ert-deftest erc-networks--id-sort-buffers ()
   (let (oldest middle newest)
@@ -149,15 +156,15 @@
 
     (with-current-buffer chan-foonet-buffer
       (erc-mode)
-      (setq erc-networks--id (make-erc-networks--id-telescopic
-                              :parts [foonet "bob"] :len 1))
-      (setq erc--target (erc--target-from-string "#chan")))
+      (setq erc-networks--id (make-erc-networks--id-eliding
+                              :parts [foonet "bob"] :len 1)
+            erc--target (erc--target-from-string "#chan")))
 
     (with-current-buffer (get-buffer-create "#chan@barnet")
       (erc-mode)
-      (setq erc-networks--id (make-erc-networks--id-telescopic
-                              :parts [barnet "bob"] :len 1))
-      (setq erc--target (erc--target-from-string "#chan")))
+      (setq erc-networks--id (make-erc-networks--id-eliding
+                              :parts [barnet "bob"] :len 1)
+            erc--target (erc--target-from-string "#chan")))
 
     (kill-buffer "#chan@barnet")
     (should (equal (erc-networks-tests--bufnames "#chan") '("#chan")))
@@ -173,15 +180,15 @@
 
     (with-current-buffer bob-foonet
       (erc-mode)
-      (setq erc-networks--id (make-erc-networks--id-telescopic
-                              :parts [foonet "bob"] :len 1))
-      (setq erc--target (erc--target-from-string "bob")))
+      (setq erc-networks--id (make-erc-networks--id-eliding
+                              :parts [foonet "bob"] :len 1)
+            erc--target (erc--target-from-string "bob")))
 
     (with-current-buffer (get-buffer-create "bob@barnet")
       (erc-mode)
-      (setq erc-networks--id (make-erc-networks--id-telescopic
-                              :parts [barnet "bob"] :len 1))
-      (setq erc--target (erc--target-from-string "bob")))
+      (setq erc-networks--id (make-erc-networks--id-eliding
+                              :parts [barnet "bob"] :len 1)
+            erc--target (erc--target-from-string "bob")))
 
     (kill-buffer "bob@barnet")
     (should (equal (erc-networks-tests--bufnames "bob") '("bob")))
@@ -221,90 +228,109 @@
                    '("bob@barnet" "bob@foonet")))
     (erc-networks-tests--clean-bufs)))
 
-(ert-deftest erc-networks--shrink-ids-and-buffer-names--perform-outstanding ()
-  ;; Not collapsed because we have one collision outstanding.
-  ;;
-  ;; Overlaps with quite a bit with the
-  ;; `erc-networks--shrink-ids-and-buffer-names--hook-outstanding-*' stuff
-  ;; below.  If this ever fails, just delete this and fix those.
+;; As of May 2022, this "shrink" stuff runs whenever an ERC buffer is
+;; killed because `erc-networks-shrink-ids-and-buffer-names' is a
+;; default member of all three erc-kill-* functions.
 
-  ;; Presumably, some buffer foonet/chester was just killed
+;; Note: this overlaps a fair bit with the "hook" variants, i.e.,
+;; `erc-networks--shrink-ids-and-buffer-names--hook-outstanding-*' If
+;; this ever fails, just delete this and fix those.  But please copy
+;; over and adapt the comments first.
+
+(ert-deftest erc-networks--shrink-ids-and-buffer-names--perform-outstanding ()
+  ;; While some buffer #a@barnet/dummy is being killed, its display ID
+  ;; is not collapsed because collisions still exist.
+  ;;
+  ;; Note that we don't have to set `erc-server-connected' because
+  ;; this function is intentionally connectivity agnostic.
   (with-current-buffer (get-buffer-create "foonet/tester")
     (erc-mode)
-    (setq erc-network 'foonet
-          erc-server-current-nick "tester"
-          erc-networks--id (make-erc-networks--id-telescopic
+    (setq erc-server-current-nick "tester" ; Always set (`erc-open')
+          ;; Set when transport connected
+          erc-server-process (erc-networks-tests--create-live-proc)
+          ;; Both set just before IRC (logically) connected (post MOTD)
+          erc-network 'foonet
+          erc-networks--id (make-erc-networks--id-eliding
                             :symbol 'foonet/tester
                             :parts [foonet "tester"]
-                            :len 2)
-          erc-server-process (erc-networks-tests--create-live-proc)))
+                            :len 2))) ; is/was a plain foonet collision
 
+  ;; Presumably, some server buffer named foonet/dummy was just
+  ;; killed, hence the length 2 display ID.
+
+  ;; A target buffer for chan #a exists for foonet/tester.  The
+  ;; precise form of its name should not affect shrinking.
   (with-current-buffer (get-buffer-create
                         (elt ["#a" "#a@foonet" "#a@foonet/tester"] (random 3)))
     (erc-mode)
-    (setq erc-server-process (with-current-buffer "foonet/tester"
-                               erc-server-process)
+    (setq erc-server-process (buffer-local-value 'erc-server-process
+                                                 (get-buffer "foonet/tester"))
           erc-network 'foonet
           erc-server-current-nick "tester"
-          erc-networks--id (with-current-buffer "foonet/tester"
-                             erc-networks--id)
+          erc-networks--id (buffer-local-value 'erc-networks--id
+                                               (get-buffer "foonet/tester"))
           erc--target (erc--target-from-string "#a")))
 
+  ;; Another network context exists (so we have buffers to iterate
+  ;; over), and it's also part of a collision group.
   (with-current-buffer (get-buffer-create "barnet/tester")
     (erc-mode)
     (setq erc-network 'barnet
           erc-server-current-nick "tester"
-          erc-networks--id (make-erc-networks--id-telescopic
+          erc-networks--id (make-erc-networks--id-eliding
                             :symbol 'barnet/tester
                             :parts [barnet "tester"]
                             :len 2)
           erc-server-process (erc-networks-tests--create-live-proc)))
 
-  (with-current-buffer (get-buffer-create "barnet/chester")
+  (with-current-buffer (get-buffer-create "barnet/dummy")
     (erc-mode)
     (setq erc-network 'barnet
-          erc-server-current-nick "chester"
-          erc-networks--id (make-erc-networks--id-telescopic
-                            :symbol 'barnet/chester
-                            :parts [barnet "chester"]
+          erc-server-current-nick "dummy"
+          erc-networks--id (make-erc-networks--id-eliding
+                            :symbol 'barnet/dummy
+                            :parts [barnet "dummy"]
                             :len 2)
           erc-server-process (erc-networks-tests--create-live-proc)))
 
-  ;; Presumably, some buffer #a@barnet/chester was just killed
+  ;; The buffer being killed is not part of the foonet collision
+  ;; group, which contains one display ID eligible for shrinkage.
   (with-current-buffer (get-buffer-create
                         (elt ["#a@barnet" "#a@barnet/tester"] (random 2)))
     (erc-mode)
     (setq erc-network 'barnet
           erc-server-current-nick "tester"
-          erc-server-process (with-current-buffer "barnet/tester"
-                               erc-server-process)
-          erc-networks--id (with-current-buffer "barnet/tester"
-                             erc-networks--id)
+          erc-server-process (buffer-local-value 'erc-server-process
+                                                 (get-buffer "barnet/tester"))
+          erc-networks--id (buffer-local-value 'erc-networks--id
+                                               (get-buffer "barnet/tester"))
           erc--target (erc--target-from-string "#a")))
 
-  (with-temp-buffer
-    (setq erc-networks--id (make-erc-networks--id-telescopic))
+  (with-temp-buffer ; doesn't matter what the current buffer is
+    (setq erc-networks--id (make-erc-networks--id-eliding)) ; mock
     (erc-networks--shrink-ids-and-buffer-names))
 
   (should (equal (mapcar #'buffer-name (erc-buffer-list))
-                 '("foonet"
-                   "#a@foonet"
+                 '("foonet" ; shrunk
+                   "#a@foonet" ; shrunk
                    "barnet/tester"
-                   "barnet/chester"
+                   "barnet/dummy"
                    "#a@barnet/tester")))
 
   (erc-networks-tests--clean-bufs))
 
-(ert-deftest erc-networks--shrink-ids-and-buffer-names--perform-collapse ()
-  ;; Overlaps with `erc-networks--shrink-ids-and-buffer-names--collapse-hook-*'
-  ;; quite a bit.  If this ever fails, just delete it and fix ^.
+;; This likewise overlaps with the "hook" variants below.  If this
+;; should ever fail, just delete it and optionally fix those.
 
-  ;; Presumably, some buffer foonet/chester was just killed
+(ert-deftest erc-networks--shrink-ids-and-buffer-names--perform-collapse ()
+  ;; This is similar to the "outstanding" variant above, but both
+  ;; groups are eligible for renaming, which is abnormal but possible
+  ;; when recovering from some mishap.
   (with-current-buffer (get-buffer-create "foonet/tester")
     (erc-mode)
     (setq erc-network 'foonet
           erc-server-current-nick "tester"
-          erc-networks--id (make-erc-networks--id-telescopic
+          erc-networks--id (make-erc-networks--id-eliding
                             :symbol 'foonet/tester
                             :parts [foonet "tester"]
                             :len 2)
@@ -313,19 +339,19 @@
   (with-current-buffer
       (get-buffer-create (elt ["#a" "#a@foonet/tester"] (random 2)))
     (erc-mode)
-    (setq erc-server-process (with-current-buffer "foonet/tester"
-                               erc-server-process)
+    (setq erc-server-process (buffer-local-value 'erc-server-process
+                                                 (get-buffer "foonet/tester"))
           erc-network 'foonet
           erc-server-current-nick "tester"
-          erc-networks--id (with-current-buffer "foonet/tester"
-                             erc-networks--id)
+          erc-networks--id (buffer-local-value 'erc-networks--id
+                                               (get-buffer "foonet/tester"))
           erc--target (erc--target-from-string "#a")))
 
   (with-current-buffer (get-buffer-create "barnet/tester")
     (erc-mode)
     (setq erc-network 'barnet
           erc-server-current-nick "tester"
-          erc-networks--id (make-erc-networks--id-telescopic
+          erc-networks--id (make-erc-networks--id-eliding
                             :symbol 'barnet/tester
                             :parts [barnet "tester"]
                             :len 2)
@@ -336,14 +362,14 @@
     (erc-mode)
     (setq erc-network 'barnet
           erc-server-current-nick "tester"
-          erc-server-process (with-current-buffer "barnet/tester"
-                               erc-server-process)
-          erc-networks--id (with-current-buffer "barnet/tester"
-                             erc-networks--id)
+          erc-server-process (buffer-local-value 'erc-server-process
+                                                 (get-buffer "barnet/tester"))
+          erc-networks--id (buffer-local-value 'erc-networks--id
+                                               (get-buffer "barnet/tester"))
           erc--target (erc--target-from-string "#b")))
 
   (with-temp-buffer
-    (setq erc-networks--id (make-erc-networks--id-telescopic))
+    (setq erc-networks--id (make-erc-networks--id-eliding))
     (erc-networks--shrink-ids-and-buffer-names))
 
   (should (equal (mapcar #'buffer-name (erc-buffer-list))
@@ -357,7 +383,7 @@
     (erc-mode)
     (setq erc-network 'foonet
           erc-server-current-nick "tester"
-          erc-networks--id (make-erc-networks--id-telescopic
+          erc-networks--id (make-erc-networks--id-eliding
                             :symbol 'foonet/tester
                             :parts [foonet "tester"]
                             :len 2)
@@ -365,31 +391,31 @@
 
   (with-current-buffer (get-buffer-create "#a@foonet/tester")
     (erc-mode)
-    (setq erc-server-process (with-current-buffer "foonet/tester"
-                               erc-server-process)
+    (setq erc-server-process (buffer-local-value 'erc-server-process
+                                                 (get-buffer "foonet/tester"))
           erc-network 'foonet
           erc-server-current-nick "tester"
-          erc-networks--id (with-current-buffer "foonet/tester"
-                             erc-networks--id)
+          erc-networks--id (buffer-local-value 'erc-networks--id
+                                               (get-buffer "foonet/tester"))
           erc--target (erc--target-from-string "#a")))
 
   (with-current-buffer (get-buffer-create "barnet/tester")
     (erc-mode)
     (setq erc-network 'barnet
           erc-server-current-nick "tester"
-          erc-networks--id (make-erc-networks--id-telescopic
+          erc-networks--id (make-erc-networks--id-eliding
                             :symbol 'barnet/tester
                             :parts [barnet "tester"]
                             :len 2)
           erc-server-process (erc-networks-tests--create-live-proc)))
 
-  (with-current-buffer (get-buffer-create "barnet/chester")
+  (with-current-buffer (get-buffer-create "barnet/dummy")
     (erc-mode)
     (setq erc-network 'barnet
-          erc-server-current-nick "chester"
-          erc-networks--id (make-erc-networks--id-telescopic
-                            :symbol 'barnet/chester
-                            :parts [barnet "chester"]
+          erc-server-current-nick "dummy"
+          erc-networks--id (make-erc-networks--id-eliding
+                            :symbol 'barnet/dummy
+                            :parts [barnet "dummy"]
                             :len 2)
           erc-server-process (erc-networks-tests--create-live-proc)))
 
@@ -397,56 +423,55 @@
     (erc-mode)
     (setq erc-network 'barnet
           erc-server-current-nick "tester"
-          erc-server-process (with-current-buffer "barnet/tester"
-                               erc-server-process)
-          erc-networks--id (with-current-buffer "barnet/tester"
-                             erc-networks--id)
+          erc-server-process (buffer-local-value 'erc-server-process
+                                                 (get-buffer "barnet/tester"))
+          erc-networks--id (buffer-local-value 'erc-networks--id
+                                               (get-buffer "barnet/tester"))
           erc--target (erc--target-from-string "#a"))))
 
 (ert-deftest erc-networks--shrink-ids-and-buffer-names--hook-outstanding-srv ()
   (erc-networks--shrink-ids-and-buffer-names--hook-outstanding-common)
-  (with-current-buffer (get-buffer-create "foonet/chester")
+  (with-current-buffer (get-buffer-create "foonet/dummy")
     (erc-mode)
     (setq erc-network 'foonet
-          erc-server-current-nick "chester"
-          erc-networks--id (make-erc-networks--id-telescopic
-                            :symbol 'foonet/chester
-                            :parts [foonet "chester"]
+          erc-server-current-nick "dummy"
+          erc-networks--id (make-erc-networks--id-eliding
+                            :symbol 'foonet/dummy
+                            :parts [foonet "dummy"]
                             :len 2)
-          erc-server-process (erc-networks-tests--create-live-proc)))
-
-  (with-current-buffer "foonet/chester" (kill-buffer))
+          erc-server-process (erc-networks-tests--create-live-proc))
+    (kill-buffer))
 
   (should (equal (mapcar #'buffer-name (erc-buffer-list))
                  '("foonet"
                    "#a@foonet"
                    "barnet/tester"
-                   "barnet/chester"
+                   "barnet/dummy"
                    "#a@barnet/tester")))
   (erc-networks-tests--clean-bufs))
 
 (ert-deftest erc-networks--shrink-ids-and-buffer-names--hook-outstanding-tgt ()
   (erc-networks--shrink-ids-and-buffer-names--hook-outstanding-common)
-  (with-current-buffer (get-buffer-create "#a@foonet/chester")
+  (with-current-buffer (get-buffer-create "#a@foonet/dummy")
     (erc-mode)
     (setq erc-network 'foonet
-          erc-server-current-nick "chester"
-          erc-networks--id (make-erc-networks--id-telescopic
-                            :symbol 'foonet/chester
-                            :parts [foonet "chester"]
+          erc-server-current-nick "dummy"
+          erc-networks--id (make-erc-networks--id-eliding
+                            :symbol 'foonet/dummy
+                            :parts [foonet "dummy"]
                             :len 2)
           erc--target (erc--target-from-string "#a")
           erc-server-process (with-temp-buffer
                                (erc-networks-tests--create-dead-proc))))
 
-  (with-current-buffer "#a@foonet/chester" (kill-buffer))
+  (with-current-buffer "#a@foonet/dummy" (kill-buffer))
 
   ;; Identical to *-server variant above
   (should (equal (mapcar #'buffer-name (erc-buffer-list))
                  '("foonet"
                    "#a@foonet"
                    "barnet/tester"
-                   "barnet/chester"
+                   "barnet/dummy"
                    "#a@barnet/tester")))
   (erc-networks-tests--clean-bufs))
 
@@ -461,7 +486,7 @@
   (should (equal (mapcar #'buffer-name (erc-buffer-list))
                  '("foonet"
                    "barnet/tester"
-                   "barnet/chester"
+                   "barnet/dummy"
                    "#a")))
 
   (erc-networks-tests--clean-bufs))
@@ -472,7 +497,7 @@
     (erc-mode)
     (setq erc-network 'foonet
           erc-server-current-nick "tester"
-          erc-networks--id (make-erc-networks--id-telescopic
+          erc-networks--id (make-erc-networks--id-eliding
                             :symbol 'foonet/tester
                             :parts [foonet "tester"]
                             :len 2)
@@ -480,19 +505,19 @@
 
   (with-current-buffer (get-buffer-create "#a@foonet/tester")
     (erc-mode)
-    (setq erc-server-process (with-current-buffer "foonet/tester"
-                               erc-server-process)
+    (setq erc-server-process (buffer-local-value 'erc-server-process
+                                                 (get-buffer "foonet/tester"))
           erc-network 'foonet
           erc-server-current-nick "tester"
-          erc-networks--id (with-current-buffer "foonet/tester"
-                             erc-networks--id)
+          erc-networks--id (buffer-local-value 'erc-networks--id
+                                               (get-buffer "foonet/tester"))
           erc--target (erc--target-from-string "#a")))
 
   (with-current-buffer (get-buffer-create "barnet/tester")
     (erc-mode)
     (setq erc-network 'barnet
           erc-server-current-nick "tester"
-          erc-networks--id (make-erc-networks--id-telescopic
+          erc-networks--id (make-erc-networks--id-eliding
                             :symbol 'barnet/tester
                             :parts [barnet "tester"]
                             :len 2)
@@ -502,10 +527,10 @@
     (erc-mode)
     (setq erc-network 'barnet
           erc-server-current-nick "tester"
-          erc-server-process (with-current-buffer "barnet/tester"
-                               erc-server-process)
-          erc-networks--id (with-current-buffer "barnet/tester"
-                             erc-networks--id)
+          erc-server-process (buffer-local-value 'erc-server-process
+                                                 (get-buffer "barnet/tester"))
+          erc-networks--id (buffer-local-value 'erc-networks--id
+                                               (get-buffer "barnet/tester"))
           erc--target (erc--target-from-string "#b")))
 
   (funcall check)
@@ -518,29 +543,27 @@
 (ert-deftest erc-networks--shrink-ids-and-buffer-names--hook-collapse-server ()
   (erc-networks--shrink-ids-and-buffer-names--hook-collapse
    (lambda ()
-     (with-current-buffer (get-buffer-create "foonet/chester")
+     (with-current-buffer (get-buffer-create "foonet/dummy")
        (erc-mode)
        (setq erc-network 'foonet
-             erc-server-current-nick "chester"
-             erc-networks--id (make-erc-networks--id-telescopic
-                               :symbol 'foonet/chester
-                               :parts [foonet "chester"]
+             erc-server-current-nick "dummy"
+             erc-networks--id (make-erc-networks--id-eliding
+                               :symbol 'foonet/dummy
+                               :parts [foonet "dummy"]
                                :len 2)
-             erc-server-process (erc-networks-tests--create-live-proc)))
-
-     (with-current-buffer "foonet/chester"
+             erc-server-process (erc-networks-tests--create-live-proc))
        (kill-buffer)))))
 
 (ert-deftest erc-networks--shrink-ids-and-buffer-names--hook-collapse-target ()
   (erc-networks--shrink-ids-and-buffer-names--hook-collapse
    (lambda ()
-     (with-current-buffer (get-buffer-create "#a@foonet/chester")
+     (with-current-buffer (get-buffer-create "#a@foonet/dummy")
        (erc-mode)
        (setq erc-network 'foonet
-             erc-server-current-nick "chester"
-             erc-networks--id (make-erc-networks--id-telescopic
-                               :symbol 'foonet/chester
-                               :parts [foonet "chester"]
+             erc-server-current-nick "dummy"
+             erc-networks--id (make-erc-networks--id-eliding
+                               :symbol 'foonet/dummy
+                               :parts [foonet "dummy"]
                                :len 2)
              ;; `erc-kill-buffer-function' uses legacy target detection
              ;; but falls back on buffer name, so no need for:
@@ -549,9 +572,8 @@
              ;;
              erc--target (erc--target-from-string "#a")
              erc-server-process (with-temp-buffer
-                                  (erc-networks-tests--create-dead-proc))))
-
-     (with-current-buffer "#a@foonet/chester" (kill-buffer)))))
+                                  (erc-networks-tests--create-dead-proc)))
+       (kill-buffer)))))
 
 ;; FIXME this test is old and may describe impossible states:
 ;; leftover identities being qual-equal but not eq (implies
@@ -571,7 +593,8 @@
 
   (with-current-buffer (get-buffer-create "#chan") ; prior session
     (erc-mode)
-    (setq erc-server-process (with-current-buffer "foonet" erc-server-process)
+    (setq erc-server-process (buffer-local-value 'erc-server-process
+                                                 (get-buffer "foonet"))
           erc--target (erc--target-from-string "#chan")
           erc-networks--id (erc-networks--id-create nil)))
 
@@ -587,7 +610,8 @@
     (setq erc--target (erc--target-from-string "#chan")
           erc-network 'foonet
           erc-server-current-nick "tester"
-          erc-server-process (with-current-buffer "foonet" erc-server-process)
+          erc-server-process (buffer-local-value 'erc-server-process
+                                                 (get-buffer "foonet"))
           erc-networks--id (erc-networks--id-create nil)))
 
   (with-current-buffer (get-buffer-create "#chan@foonet<dead>")
@@ -641,13 +665,15 @@
   (with-current-buffer (get-buffer-create "#chan") ; prior session
     (erc-mode)
     (setq erc-networks--id (erc-networks--id-create 'oofnet)
-          erc-server-process (with-current-buffer "oofnet" erc-server-process)
+          erc-server-process (buffer-local-value 'erc-server-process
+                                                 (get-buffer "oofnet"))
           erc--target (erc--target-from-string "#chan")))
 
   (with-current-buffer (get-buffer-create "#chan@oofnet") ;dupe/not collision
     (erc-mode)
     (setq erc-networks--id (erc-networks--id-create 'oofnet)
-          erc-server-process (with-current-buffer "oofnet" erc-server-process)
+          erc-server-process (buffer-local-value 'erc-server-process
+                                                 (get-buffer "oofnet"))
           erc--target (erc--target-from-string "#chan")))
 
   (with-current-buffer "oofnet"
@@ -735,8 +761,8 @@
        (with-current-buffer (get-buffer-create "#chan@barnet")
          (erc-mode)
          (setq erc--target (erc--target-from-string "#chan")
-               erc-server-process (with-current-buffer "barnet"
-                                    erc-server-process)
+               erc-server-process (buffer-local-value 'erc-server-process
+                                                      (get-buffer "barnet"))
                erc-networks--id (erc-networks--id-create nil)))
        (with-current-buffer (get-buffer-create "foonet")
          (erc-mode)
@@ -754,7 +780,8 @@
 
 (defun erc-tests--prep-erc-networks--reconcile-buffer-names--no-srv-buf-given
     (check)
-  (let ((oofnet-proc (with-temp-buffer (erc-networks-tests--create-dead-proc))))
+  (let ((oofnet-proc (with-temp-buffer
+                       (erc-networks-tests--create-dead-proc))))
 
     (with-current-buffer (get-buffer-create "rabnet")
       (erc-mode)
@@ -799,10 +826,10 @@
        (with-current-buffer (get-buffer-create "#chan@rabnet")
          (erc-mode)
          (setq erc--target (erc--target-from-string "#chan")
-               erc-server-process (with-current-buffer "rabnet"
-                                    erc-server-process)
-               erc-networks--id (with-current-buffer "rabnet"
-                                  erc-networks--id)))
+               erc-server-process (buffer-local-value 'erc-server-process
+                                                      (get-buffer "rabnet"))
+               erc-networks--id (buffer-local-value 'erc-networks--id
+                                                    (get-buffer "rabnet"))))
 
        (with-current-buffer (get-buffer-create "oofnet")
          (erc-mode)
@@ -862,8 +889,8 @@
           erc-server-process (erc-networks-tests--create-dead-proc)
           erc-networks--id (erc-networks--id-create nil))) ; derived
 
-  (with-current-buffer (get-buffer-create (elt ["#chan" "#chan@foonet"]
-                                               (random 2)))
+  (with-current-buffer
+      (get-buffer-create (elt ["#chan" "#chan@foonet"] (random 2)))
     (erc-mode)
     (setq erc--target (erc--target-from-string "#chan"))
     (cl-multiple-value-setq (erc-server-process erc-networks--id)
@@ -1030,7 +1057,7 @@
     (erc-mode)
     (setq erc-network 'foonet
           erc-server-current-nick "bob"
-          erc-networks--id (make-erc-networks--id-telescopic
+          erc-networks--id (make-erc-networks--id-eliding
                             :symbol 'foonet/bob
                             :parts [foonet "bob"]
                             :len 2)
@@ -1040,10 +1067,10 @@
                         (elt ["#chan@foonet" "#chan@foonet/bob"] (random 2)))
     (erc-mode)
     (setq erc--target (erc--target-from-string "#chan")
-          erc-server-process (with-current-buffer "foonet/bob"
-                               erc-server-process)
-          erc-networks--id (with-current-buffer "foonet/bob"
-                             erc-networks--id)))
+          erc-server-process (buffer-local-value 'erc-server-process
+                                                 (get-buffer "foonet/bob"))
+          erc-networks--id (buffer-local-value 'erc-networks--id
+                                               (get-buffer "foonet/bob"))))
 
   (with-current-buffer (get-buffer-create "barnet")
     (erc-mode)
@@ -1055,16 +1082,16 @@
   (with-current-buffer (get-buffer-create "#chan@barnet")
     (erc-mode)
     (setq erc--target (erc--target-from-string "#chan")
-          erc-server-process (with-current-buffer "barnet"
-                               erc-server-process)
-          erc-networks--id (with-current-buffer "barnet"
-                             erc-networks--id)))
+          erc-server-process (buffer-local-value 'erc-server-process
+                                                 (get-buffer "barnet"))
+          erc-networks--id (buffer-local-value 'erc-networks--id
+                                               (get-buffer "barnet"))))
 
   (with-current-buffer (get-buffer-create "foonet/alice")
     (erc-mode)
     (setq erc-network 'foonet
           erc-server-current-nick "alice"
-          erc-networks--id (make-erc-networks--id-telescopic
+          erc-networks--id (make-erc-networks--id-eliding
                             :symbol 'foonet/alice
                             :parts [foonet "alice"]
                             :len 2)
@@ -1135,6 +1162,30 @@
           (should (string-match-p "*** Failed" (car (pop calls)))))))
 
     (erc-networks-tests--clean-bufs)))
+
+(ert-deftest erc-networks--ensure-announced ()
+  (with-current-buffer (get-buffer-create "localhost:6667")
+    (should (local-variable-if-set-p 'erc-server-announced-name))
+    (let (erc-insert-modify-hook
+          (erc-server-process (erc-networks-tests--create-live-proc))
+          (parsed (make-erc-response
+                   :unparsed ":irc.barnet.org 422 tester :MOTD File is missing"
+                   :sender "irc.barnet.org"
+                   :command "422"
+                   :command-args '("tester" "MOTD File is missing")
+                   :contents "MOTD File is missing")))
+
+      (erc-mode) ; boilerplate displayable start (needs `erc-server-process')
+      (insert "\n\n")
+      (setq erc-input-marker (make-marker) erc-insert-marker (make-marker))
+      (set-marker erc-insert-marker (point-max))
+      (erc-display-prompt) ; boilerplate displayable end
+
+      (erc-networks--ensure-announced erc-server-process parsed)
+      (goto-char (point-min))
+      (search-forward "Failed")
+      (should (string= erc-server-announced-name "irc.barnet.org")))
+    (when noninteractive (kill-buffer))))
 
 (ert-deftest erc-networks--rename-server-buffer--no-existing--orphan ()
   (with-current-buffer (get-buffer-create "#chan")
@@ -1207,49 +1258,60 @@
 
   (erc-networks-tests--clean-bufs))
 
-(ert-deftest erc-networks--rename-server-buffer--existing--noreuse ()
-  (should erc-reuse-buffers) ; default
-  (let* ((old-buf (get-buffer-create "FooNet"))
-         (old-proc (erc-networks-tests--create-dead-proc old-buf))
-         erc-reuse-buffers)
-    (with-current-buffer old-buf
-      (erc-mode)
-      (insert "*** Old buf")
-      (setq erc-network 'FooNet
-            erc-server-current-nick "tester"
-            erc-insert-marker (set-marker (make-marker) (point-max))
-            erc-server-process old-proc
-            erc-networks--id (erc-networks--id-create nil)))
-    (with-current-buffer (get-buffer-create "#chan")
-      (erc-mode)
-      (setq erc-network 'FooNet
-            erc-server-process old-proc
-            erc-networks--id (erc-networks--id-create nil)
-            erc--target (erc--target-from-string "#chan")))
+;; This is for compatibility with pre-28.1 behavior.  Basically, we're
+;; trying to match the behavior bug for bug.  All buffers were always
+;; suffixed and never reassociated.  28.1 introduced a regression that
+;; reversed the latter, but we've reverted that.
 
-    (ert-info ("Server buffer uniquely renamed")
-      (with-current-buffer (get-buffer-create "irc.foonet.org")
+(ert-deftest erc-networks--rename-server-buffer--existing--noreuse ()
+  (with-suppressed-warnings ((obsolete erc-reuse-buffers))
+    (should erc-reuse-buffers) ; default
+    (let* ((old-buf (get-buffer-create "irc.foonet.org:6697/irc.foonet.org"))
+           (old-proc (erc-networks-tests--create-dead-proc old-buf))
+           erc-reuse-buffers)
+      (with-current-buffer old-buf
         (erc-mode)
+        (insert "*** Old buf")
         (setq erc-network 'FooNet
               erc-server-current-nick "tester"
-              erc-server-process (erc-networks-tests--create-live-proc)
-              erc-networks--id (erc-networks--id-create nil))
-        (should-not (erc-networks--rename-server-buffer erc-server-process))
-        (should (string= (buffer-name) "FooNet<2>"))
-        (goto-char (point-min))
-        (should-not (search-forward "Old buf" nil t))))
+              erc-insert-marker (set-marker (make-marker) (point-max))
+              erc-server-process old-proc
+              erc-networks--id (erc-networks--id-create nil)))
+      (with-current-buffer (get-buffer-create "#chan")
+        (erc-mode)
+        (setq erc-network 'FooNet
+              erc-server-process old-proc
+              erc-networks--id (buffer-local-value 'erc-networks--id old-buf)
+              erc--target (erc--target-from-string "#chan"))
+        (rename-buffer (erc-networks--construct-target-buffer-name erc--target)))
 
-    (ert-info ("Channel buffer reassociated")
-      (erc-server-process-alive "#chan")
-      (with-current-buffer "#chan"
-        (should erc-server-connected)
-        (should-not (eq erc-server-process old-proc))
-        (erc-with-server-buffer
-          (should (string= (buffer-name) "FooNet<2>")))))
+      (ert-info ("Server buffer uniquely renamed")
+        (with-current-buffer
+            (get-buffer-create "irc.foonet.org:6697/irc.foonet.org<2>")
+          (erc-mode)
+          (setq erc-network 'FooNet
+                erc-server-current-nick "tester"
+                erc-server-process (erc-networks-tests--create-live-proc)
+                erc-networks--id (erc-networks--id-create nil))
+          (should-not (erc-networks--rename-server-buffer erc-server-process))
+          (should (string= (buffer-name)
+                           "irc.foonet.org:6697/irc.foonet.org<2>"))
+          (goto-char (point-min))
+          (should-not (search-forward "Old buf" nil t))))
 
-    (ert-info ("Old buffer still around")
-      (should (buffer-live-p old-buf))))
+      (ert-info ("Channel buffer not reassociated")
+        (should-not
+         (erc-server-process-alive
+          (should (get-buffer "#chan/irc.foonet.org"))))
+        (with-current-buffer (get-buffer "#chan/irc.foonet.org")
+          (should-not erc-server-connected)
+          (should (eq erc-server-process old-proc))
+          (erc-with-server-buffer
+            (should (string= (buffer-name)
+                             "irc.foonet.org:6697/irc.foonet.org")))))
 
+      (ert-info ("Old buffer still around")
+        (should (buffer-live-p old-buf)))))
   (erc-networks-tests--clean-bufs))
 
 (ert-deftest erc-networks--rename-server-buffer--reconnecting ()
@@ -1490,50 +1552,49 @@
 (ert-deftest erc-networks--update-server-identity--double-existing ()
   (with-temp-buffer
     (erc-mode)
-    (setq erc-networks--id (make-erc-networks--id-telescopic
-                            :parts [foonet "bob"]
-                            :len 1))
+    (setq erc-networks--id (make-erc-networks--id-eliding
+                            :parts [foonet "bob"] :len 1))
 
     (with-current-buffer (get-buffer-create "#chan@foonet/bob")
       (erc-mode)
-      (setq erc-networks--id (make-erc-networks--id-telescopic
-                              :parts [foonet "bob"]
-                              :len 2)))
+      (setq erc-networks--id (make-erc-networks--id-eliding
+                              :parts [foonet "bob"] :len 2)))
     (with-current-buffer (get-buffer-create "foonet/alice")
       (erc-mode)
       (setq erc-networks--id
-            (make-erc-networks--id-telescopic :parts [foonet "alice"] :len 2)))
+            (make-erc-networks--id-eliding :parts [foonet "alice"] :len 2)))
 
     (ert-info ("Adopt equivalent identity")
       (should (eq (erc-networks--update-server-identity)
-                  (with-current-buffer "#chan@foonet/bob" erc-networks--id))))
+                  (buffer-local-value 'erc-networks--id
+                                      (get-buffer "#chan@foonet/bob")))))
 
     (ert-info ("Ignore non-matches")
       (should-not (erc-networks--update-server-identity))
       (should (eq erc-networks--id
-                  (with-current-buffer "#chan@foonet/bob" erc-networks--id)))))
+                  (buffer-local-value 'erc-networks--id
+                                      (get-buffer "#chan@foonet/bob"))))))
 
   (erc-networks-tests--clean-bufs))
 
 (ert-deftest erc-networks--update-server-identity--double-new ()
   (with-temp-buffer
     (erc-mode)
-    (setq erc-networks--id (make-erc-networks--id-telescopic
-                            :parts [foonet "bob"]
-                            :len 1))
+    (setq erc-networks--id (make-erc-networks--id-eliding
+                            :parts [foonet "bob"] :len 1))
 
     (with-current-buffer (get-buffer-create "foonet/alice")
       (erc-mode)
       (setq erc-networks--id
-            (make-erc-networks--id-telescopic :parts [foonet "alice"] :len 2)))
+            (make-erc-networks--id-eliding :parts [foonet "alice"] :len 2)))
     (with-current-buffer (get-buffer-create "#chan@foonet/alice")
       (erc-mode)
-      (setq erc-networks--id (with-current-buffer "foonet/alice"
-                               erc-networks--id)))
+      (setq erc-networks--id (buffer-local-value 'erc-networks--id
+                                                 (get-buffer "foonet/alice"))))
 
     (ert-info ("Evolve identity to prevent ambiguity")
       (should-not (erc-networks--update-server-identity))
-      (should (= (erc-networks--id-telescopic-len erc-networks--id) 2))
+      (should (= (erc-networks--id-eliding-len erc-networks--id) 2))
       (should (eq (erc-networks--id-symbol erc-networks--id) 'foonet/bob))))
 
   (erc-networks-tests--clean-bufs))
@@ -1541,22 +1602,22 @@
 (ert-deftest erc-networks--update-server-identity--double-bounded ()
   (with-temp-buffer
     (erc-mode)
-    (setq erc-networks--id (make-erc-networks--id-telescopic
-                            :parts [foonet "bob"]
-                            :len 1))
+    (setq erc-networks--id (make-erc-networks--id-eliding
+                            :parts [foonet "bob"] :len 1))
 
     (with-current-buffer (get-buffer-create "foonet/alice/home")
       (erc-mode)
-      (setq erc-networks--id (make-erc-networks--id-telescopic
+      (setq erc-networks--id (make-erc-networks--id-eliding
                               :parts [foonet "alice" home] :len 3)))
     (with-current-buffer (get-buffer-create "#chan@foonet/alice/home")
       (erc-mode)
-      (setq erc-networks--id (with-current-buffer "foonet/alice/home"
-                               erc-networks--id)))
+      (setq erc-networks--id
+            (buffer-local-value 'erc-networks--id
+                                (get-buffer "foonet/alice/home"))))
 
     (ert-info ("Evolve identity to prevent ambiguity")
       (should-not (erc-networks--update-server-identity))
-      (should (= (erc-networks--id-telescopic-len erc-networks--id) 2))
+      (should (= (erc-networks--id-eliding-len erc-networks--id) 2))
       (should (eq (erc-networks--id-symbol erc-networks--id) 'foonet/bob))))
 
   (erc-networks-tests--clean-bufs))
@@ -1565,20 +1626,21 @@
   (with-temp-buffer
     (erc-mode)
     (setq erc-networks--id
-          (make-erc-networks--id-telescopic :parts [foonet "bob"] :len 1))
+          (make-erc-networks--id-eliding :parts [foonet "bob"] :len 1))
 
     (with-current-buffer (get-buffer-create "foonet")
       (erc-mode)
       (setq erc-networks--id
-            (make-erc-networks--id-telescopic :parts [foonet "alice"] :len 1)))
+            (make-erc-networks--id-eliding :parts [foonet "alice"] :len 1)))
     (with-current-buffer (get-buffer-create "#chan")
       (erc-mode)
       (setq erc--target (erc--target-from-string "#chan")
-            erc-networks--id (with-current-buffer "foonet" erc-networks--id)))
+            erc-networks--id (buffer-local-value 'erc-networks--id
+                                                 (get-buffer "foonet"))))
 
     (ert-info ("Evolve identity to prevent ambiguity")
       (should-not (erc-networks--update-server-identity))
-      (should (= (erc-networks--id-telescopic-len erc-networks--id) 2))
+      (should (= (erc-networks--id-eliding-len erc-networks--id) 2))
       (should (eq (erc-networks--id-symbol erc-networks--id) 'foonet/bob)))
 
     (ert-info ("Collision renamed")
@@ -1595,21 +1657,22 @@
   (with-temp-buffer
     (erc-mode)
     (setq erc-networks--id
-          (make-erc-networks--id-telescopic :parts [foonet "bob" home] :len 1))
+          (make-erc-networks--id-eliding :parts [foonet "bob" home] :len 1))
 
     (with-current-buffer (get-buffer-create "foonet/bob/office")
       (erc-mode)
       (setq erc-networks--id
-            (make-erc-networks--id-telescopic :parts [foonet "bob" office]
-                                              :len 3)))
+            (make-erc-networks--id-eliding :parts [foonet "bob" office]
+                                           :len 3)))
     (with-current-buffer (get-buffer-create "#chan@foonet/bob/office")
       (erc-mode)
-      (setq erc-networks--id (with-current-buffer "foonet/bob/office"
-                               erc-networks--id)))
+      (setq erc-networks--id
+            (buffer-local-value 'erc-networks--id
+                                (get-buffer "foonet/bob/office"))))
 
     (ert-info ("Extend our identity's canonical ID so that it's unique")
       (should-not (erc-networks--update-server-identity))
-      (should (= (erc-networks--id-telescopic-len erc-networks--id) 3))))
+      (should (= (erc-networks--id-eliding-len erc-networks--id) 3))))
 
   (erc-networks-tests--clean-bufs))
 

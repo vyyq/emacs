@@ -1,4 +1,4 @@
-;;; erc-scenarios-join-netid-newcmd.el --- join netid newcmd scenarios -*- lexical-binding: t -*-
+;;; erc-scenarios-internal.el --- Proxy file for erc-d tests -*- lexical-binding: t -*-
 
 ;; Copyright (C) 2022 Free Software Foundation, Inc.
 ;;
@@ -20,18 +20,8 @@
 
 (require 'ert-x)
 (eval-and-compile
-  (let ((load-path (cons (ert-resource-directory) load-path)))
-    (require 'erc-scenarios-common)))
+  (let ((load-path (cons (expand-file-name "erc-d" (ert-resource-directory))
+                         load-path)))
+    (load "erc-d-tests" nil 'silent)))
 
-(ert-deftest erc-scenarios-join-netid--newcmd ()
-  :tags '(:expensive-test)
-  (let ((connect (lambda ()
-                   (erc :server "127.0.0.1"
-                        :port (with-current-buffer "foonet"
-                                (process-contact erc-server-process :service))
-                        :nick "tester"
-                        :password "foonet:changeme"
-                        :full-name "tester"))))
-    (erc-scenarios-common--join-network-id connect nil nil)))
-
-;;; erc-scenarios-join-netid-newcmd.el ends here
+;;; erc-scenarios-internal.el ends here

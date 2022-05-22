@@ -136,6 +136,8 @@
     (kill-buffer "#spam")))
 
 (defun erc-tests--send-prep ()
+  ;; Caller should probably shadow `erc-insert-modify-hook' or
+  ;; populate user tables for erc-button.
   (erc-mode)
   (insert "\n\n")
   (setq erc-input-marker (make-marker)

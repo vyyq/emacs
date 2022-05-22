@@ -186,7 +186,7 @@ TOPICLEN=160 - maximum allowed topic length
 WALLCHOPS - supports sending messages to all operators in a channel")
 
 (defvar-local erc--isupport-params nil
-  "Hash map of isupport params.
+  "Hash map of \"ISUPPORT\" params.
 Keys are symbols.  Values are lists of zero or more strings with hex
 escapes removed.")
 
@@ -196,11 +196,9 @@ escapes removed.")
   "Mapping of server buffers to their specific ping timer.")
 
 (defvar-local erc-server-connected nil
-  "Non-nil if the current buffer has been used by ERC to establish
-an IRC connection.
-
-If you wish to determine whether an IRC connection is currently
-active, use the `erc-server-process-alive' function instead.")
+  "Non-nil if the current buffer belongs to an active IRC connection.
+To determine whether an underlying transport is connected, use the
+function `erc-server-process-alive' instead.")
 
 (defvar-local erc-server-reconnect-count 0
   "Number of times we have failed to reconnect to the current server.")
@@ -604,7 +602,10 @@ Make sure you are in an ERC buffer when running this."
                   erc-session-user-full-name t erc-session-password
                   nil nil nil erc-session-client-certificate
                   erc-session-username
-                  (erc-networks--id-given erc-networks--id))))))
+                  (erc-networks--id-given erc-networks--id))
+        (unless (with-suppressed-warnings ((obsolete erc-reuse-buffers))
+                  erc-reuse-buffers)
+          (cl-assert (not (eq buffer (current-buffer)))))))))
 
 (defun erc-server-delayed-reconnect (buffer)
   (if (buffer-live-p buffer)
@@ -1241,7 +1242,7 @@ Would expand to:
                         aliases))
   (let* ((hook-name (intern (format "erc-server-%s-functions" name)))
          (fn-name (intern (format "erc-server-%s" name)))
-         (hook-doc (format-message "\
+         (hook-doc (format "\
 %sHook called upon receiving a %%s server response.
 Each function is called with two arguments, the process associated
 with the response and the parsed response.  If the function returns
@@ -1252,7 +1253,7 @@ See also `%s'."
                                (concat extra-var-doc "\n\n")
                              "")
                            fn-name))
-         (fn-doc (format-message "\
+         (fn-doc (format "\
 %sHandler for a %s server response.
 PROC is the server process which returned the response.
 PARSED is the actual response as an `erc-response' struct.
@@ -1672,7 +1673,7 @@ Then display the welcome message."
          (split-string value ",")
        (list value)))))
 
-;; FIXME move to erc-compat (once it's been fully reinstated)
+;; FIXME move to erc-compat (once we decide how to load it)
 (defalias 'erc--with-memoization
   (cond
    ((fboundp 'with-memoization) #'with-memoization) ; 29.1
@@ -1683,8 +1684,8 @@ Then display the welcome message."
   "Return an item for \"ISUPPORT\" token KEY, a symbol.
 When a lookup fails return nil.  Otherwise return a list whose CAR is
 KEY and whose CDR is zero or more strings.  With SINGLE, just return the
-first value, if any.  This is potentially ambiguous and only useful for
-tokens supporting a single primitive value."
+first value, if any.  The latter is potentially ambiguous and only
+useful for tokens supporting a single primitive value."
   (if-let* ((table (or erc--isupport-params
                        (erc-with-server-buffer erc--isupport-params)))
             (value (erc--with-memoization (gethash key table)

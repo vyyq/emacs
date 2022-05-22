@@ -1,6 +1,6 @@
 ;;; erc-scenarios-auth-source.el --- auth-source scenarios -*- lexical-binding: t -*-
 
-;; Copyright (C) 2021 Free Software Foundation, Inc.
+;; Copyright (C) 2022 Free Software Foundation, Inc.
 ;;
 ;; This file is part of GNU Emacs.
 ;;
@@ -76,8 +76,8 @@
 
 (ert-deftest erc-scenarios-base-auth-source-server--netid-custom ()
   :tags '(:expensive-test)
-  (let ((erc-auth-source-parameters-server-function
-         (lambda (&rest _) (list :host "MyHost"))))
+  (let ((erc-auth-source-server-function
+         (lambda (&rest _) (erc-auth-source-search :host "MyHost"))))
     (erc-scenarios-common--auth-source
      'MySession 'foonet
      "machine 127.0.0.1 port %d user tester password fake"
@@ -86,12 +86,12 @@
 
 (ert-deftest erc-scenarios-base-auth-source-server--nopass ()
   :tags '(:expensive-test)
-  (let (erc-auth-source-parameters-server-function)
+  (let (erc-auth-source-server-function)
     (erc-scenarios-common--auth-source nil 'nopass)))
 
 (ert-deftest erc-scenarios-base-auth-source-server--nopass-netid ()
   :tags '(:expensive-test)
-  (let (erc-auth-source-parameters-server-function)
+  (let (erc-auth-source-server-function)
     (erc-scenarios-common--auth-source 'MySession 'nopass)))
 
 ;; Identify via auth source with no initial password
@@ -137,7 +137,7 @@
 (ert-deftest erc-scenarios-services-auth-source--network ()
   :tags '(:expensive-test)
   ;; Skip consulting auth-source for the server password (PASS).
-  (let (erc-auth-source-parameters-server-function)
+  (let (erc-auth-source-server-function)
     (erc-scenarios-common--services-auth-source
      "machine 127.0.0.1 port %d user tester password spam"
      "machine zirconium.libera.chat port %d user tester password fake"
@@ -152,7 +152,7 @@
 
 (ert-deftest erc-scenarios-services-auth-source--announced ()
   :tags '(:expensive-test)
-  (let (erc-auth-source-parameters-server-function)
+  (let (erc-auth-source-server-function)
     (erc-scenarios-common--services-auth-source
      "machine 127.0.0.1 port %d user tester password spam"
      "machine zirconium.libera.chat port %d user tester password changeme")))
@@ -161,15 +161,15 @@
   :tags '(:expensive-test)
   ;; Support legacy host -> domain name
   ;; (likely most common in real configs)
-  (let (erc-auth-source-parameters-server-function)
+  (let (erc-auth-source-server-function)
     (erc-scenarios-common--services-auth-source
      "machine 127.0.0.1 port %d user tester password changeme")))
 
 (ert-deftest erc-scenarios-services-auth-source--custom ()
   :tags '(:expensive-test)
-  (let (erc-auth-source-parameters-server-function
-        (erc-auth-source-parameters-services-function
-         (lambda (&rest _) '(:host "MyAccount"))))
+  (let (erc-auth-source-server-function
+        (erc-auth-source-services-function
+         (lambda (&rest _) (erc-auth-source-search :host "MyAccount"))))
     (erc-scenarios-common--services-auth-source
      "machine zirconium.libera.chat port %d user tester password spam"
      "machine MyAccount port %d user tester password changeme"

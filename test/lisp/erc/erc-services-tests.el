@@ -1,6 +1,6 @@
 ;;; erc-services-tests.el --- Tests for erc-services.  -*- lexical-binding:t -*-
 
-;; Copyright (C) 2020-2021 Free Software Foundation, Inc.
+;; Copyright (C) 2020-2022 Free Software Foundation, Inc.
 
 ;; This file is part of GNU Emacs.
 ;;
@@ -31,7 +31,7 @@
 
 ;;;; Core auth-source
 
-(ert-deftest erc-auth-source-determine-params-merge ()
+(ert-deftest erc--auth-source-determine-params-merge ()
   (let ((erc-session-server "irc.gnu.org")
         (erc-server-announced-name "my.gnu.org")
         (erc-session-port 6697)
@@ -39,23 +39,23 @@
         (erc-server-current-nick "tester")
         (erc-networks--id (erc-networks--id-create 'GNU.chat)))
 
-    (should (equal (erc-auth-source-determine-params-merge)
+    (should (equal (erc--auth-source-determine-params-merge)
                    '(:host ("GNU.chat" "my.gnu.org" "irc.gnu.org")
                            :port ("6697" "irc")
                            :require (:secret))))
 
-    (should (equal (erc-auth-source-determine-params-merge :host "fake")
+    (should (equal (erc--auth-source-determine-params-merge :host "fake")
                    '(:host ("fake" "GNU.chat" "my.gnu.org" "irc.gnu.org")
                            :port ("6697" "irc")
                            :require (:secret))))
 
-    (should (equal (erc-auth-source-determine-params-merge
+    (should (equal (erc--auth-source-determine-params-merge
                     :host '("fake") :require :host)
                    '(:host ("fake" "GNU.chat" "my.gnu.org" "irc.gnu.org")
                            :require (:host :secret)
                            :port ("6697" "irc"))))
 
-    (should (equal (erc-auth-source-determine-params-merge
+    (should (equal (erc--auth-source-determine-params-merge
                     :host '("fake" "GNU.chat") :port "1234" :x "x")
                    '(:host ("fake" "GNU.chat" "my.gnu.org" "irc.gnu.org")
                            :port ("1234" "6697" "irc")
@@ -65,43 +65,37 @@
 ;; Some of the following may be related to bug#23438.
 
 (defun erc-services-tests--auth-source-standard (search)
-  (let ((filter #'erc-auth-source-determine-params-merge))
 
-    (ert-info ("Session wins")
-      (let ((erc-session-server "irc.gnu.org")
-            (erc-server-announced-name "my.gnu.org")
-            (erc-session-port 6697)
-            (erc-network 'fake)
-            (erc-server-current-nick "tester")
-            (erc-networks--id (erc-networks--id-create 'GNU.chat)))
-        (should-not (funcall search))
-        (should (string= (apply search (funcall filter :user "#chan"))
-                         "foo"))))
+  (ert-info ("Session wins")
+    (let ((erc-session-server "irc.gnu.org")
+          (erc-server-announced-name "my.gnu.org")
+          (erc-session-port 6697)
+          (erc-network 'fake)
+          (erc-server-current-nick "tester")
+          (erc-networks--id (erc-networks--id-create 'GNU.chat)))
+      (should (string= (funcall search :user "#chan") "foo"))))
 
-    (ert-info ("Network wins")
-      (let* ((erc-session-server "irc.gnu.org")
-             (erc-server-announced-name "my.gnu.org")
-             (erc-session-port 6697)
-             (erc-network 'GNU.chat)
-             (erc-server-current-nick "tester")
-             (erc-networks--id (erc-networks--id-create nil)))
-        (should (string= (apply search (funcall filter :user "#chan"))
-                         "foo"))))
+  (ert-info ("Network wins")
+    (let* ((erc-session-server "irc.gnu.org")
+           (erc-server-announced-name "my.gnu.org")
+           (erc-session-port 6697)
+           (erc-network 'GNU.chat)
+           (erc-server-current-nick "tester")
+           (erc-networks--id (erc-networks--id-create nil)))
+      (should (string= (funcall search :user "#chan") "foo"))))
 
-    (ert-info ("Announced wins")
-      (let ((erc-session-server "irc.gnu.org")
-            (erc-server-announced-name "my.gnu.org")
-            (erc-session-port 6697)
-            erc-network
-            (erc-networks--id (erc-networks--id-create nil)))
-        (should (string= (apply search (funcall filter :user "#chan"))
-                         "baz"))))))
+  (ert-info ("Announced wins")
+    (let ((erc-session-server "irc.gnu.org")
+          (erc-server-announced-name "my.gnu.org")
+          (erc-session-port 6697)
+          erc-network
+          (erc-networks--id (erc-networks--id-create nil)))
+      (should (string= (funcall search :user "#chan") "baz")))))
 
 (defun erc-services-tests--auth-source-announced (search)
   (let* ((erc--isupport-params (make-hash-table))
          (erc-server-parameters '(("CHANTYPES" . "&#")))
-         (erc--target (erc--target-from-string "&chan"))
-         (filter #'erc-auth-source-determine-params-merge))
+         (erc--target (erc--target-from-string "&chan")))
 
     (ert-info ("Announced prioritized")
 
@@ -112,8 +106,7 @@
                (erc-network 'GNU.chat)
                (erc-server-current-nick "tester")
                (erc-networks--id (erc-networks--id-create nil)))
-          (should (string= (apply search (funcall filter :user "#chan"))
-                           "baz"))))
+          (should (string= (funcall search :user "#chan") "baz"))))
 
       (ert-info ("Peer next")
         (let* ((erc-server-announced-name "irc.gnu.org")
@@ -121,16 +114,14 @@
                (erc-network 'GNU.chat)
                (erc-server-current-nick "tester")
                (erc-networks--id (erc-networks--id-create nil)))
-          (should (string= (apply search (funcall filter :user "#chan"))
-                           "bar"))))
+          (should (string= (funcall search :user "#chan") "bar"))))
 
       (ert-info ("Network used as fallback")
         (let* ((erc-session-port 6697)
                (erc-network 'GNU.chat)
                (erc-server-current-nick "tester")
                (erc-networks--id (erc-networks--id-create nil)))
-          (should (string= (apply search (funcall filter :user "#chan"))
-                           "foo")))))))
+          (should (string= (funcall search :user "#chan") "foo")))))))
 
 (defun erc-services-tests--auth-source-overrides (search)
   (let* ((erc-session-server "irc.gnu.org")
@@ -138,27 +129,22 @@
          (erc-network 'GNU.chat)
          (erc-server-current-nick "tester")
          (erc-networks--id (erc-networks--id-create nil))
-         (erc-session-port 6667)
-         (filter #'erc-auth-source-determine-params-merge))
+         (erc-session-port 6667))
 
     (ert-info ("Specificity and overrides")
 
       (ert-info ("More specific port")
         (let ((erc-session-port 6697))
-          (should (string= (apply search (funcall filter :user "#chan"))
-                           "spam"))))
+          (should (string= (funcall search :user "#chan") "spam"))))
 
       (ert-info ("More specific user (network loses)")
-        (should (string= (apply search (funcall filter :user '("#fsf")))
-                         "42")))
+        (should (string= (funcall search :user '("#fsf")) "42")))
 
       (ert-info ("Actual override")
-        (should (string= (apply search (funcall filter :port "6667"))
-                         "sesame")))
+        (should (string= (funcall search :port "6667") "sesame")))
 
       (ert-info ("Overrides don't interfere with post-processing")
-        (should (string= (apply search (funcall filter :host "MyHost"))
-                         "123"))))))
+        (should (string= (funcall search :host "MyHost") "123"))))))
 
 ;; auth-source netrc backend
 
@@ -167,6 +153,7 @@
     "machine my.gnu.org port irc user \"#chan\" password baz"
     "machine GNU.chat port irc user \"#chan\" password foo"))
 
+;; FIXME explain what this is for
 (defun erc-services-tests--auth-source-shuffle (&rest extra)
   (string-join `(,@(sort (append erc-services-tests--auth-source-entries extra)
                          (lambda (&rest _) (zerop (random 2))))
@@ -180,8 +167,7 @@
 
     (let ((auth-sources (list netrc-file))
           (auth-source-do-cache nil))
-      (erc-services-tests--auth-source-standard
-       #'erc--auth-source-search))))
+      (erc-services-tests--auth-source-standard #'erc-auth-source-search))))
 
 (ert-deftest erc--auth-source-search--netrc-announced ()
   (ert-with-temp-file netrc-file
@@ -190,8 +176,7 @@
 
     (let ((auth-sources (list netrc-file))
           (auth-source-do-cache nil))
-      (erc-services-tests--auth-source-announced
-       #'erc--auth-source-search))))
+      (erc-services-tests--auth-source-announced #'erc-auth-source-search))))
 
 (ert-deftest erc--auth-source-search--netrc-overrides ()
   (ert-with-temp-file netrc-file
@@ -205,8 +190,7 @@
 
     (let ((auth-sources (list netrc-file))
           (auth-source-do-cache nil))
-      (erc-services-tests--auth-source-overrides
-       #'erc--auth-source-search))))
+      (erc-services-tests--auth-source-overrides #'erc-auth-source-search))))
 
 ;; auth-source plstore backend
 
@@ -218,7 +202,7 @@
               (lambda (&rest _) "" '((program . "/bin/true")))
               '((name . erc--auth-source-plstore)))
   (unwind-protect
-      (apply #'erc--auth-source-search args)
+      (apply #'erc-auth-source-search args)
     (advice-remove 'epg-decrypt-string 'erc--auth-source-plstore)
     (advice-remove 'epg-find-configuration 'erc--auth-source-plstore)))
 
@@ -323,8 +307,7 @@
              erc-services-tests--auth-source-json-standard-entries))
     (let ((auth-sources (list json-store))
           (auth-source-do-cache nil))
-      (erc-services-tests--auth-source-standard
-       #'erc--auth-source-search))))
+      (erc-services-tests--auth-source-standard #'erc-auth-source-search))))
 
 (ert-deftest erc--auth-source-search--json-announced ()
   (ert-with-temp-file plstore-file
@@ -335,8 +318,7 @@
 
     (let ((auth-sources (list plstore-file))
           (auth-source-do-cache nil))
-      (erc-services-tests--auth-source-announced
-       #'erc--auth-source-search))))
+      (erc-services-tests--auth-source-announced #'erc-auth-source-search))))
 
 (ert-deftest erc--auth-source-search--json-overrides ()
   (ert-with-temp-file json-file
@@ -353,8 +335,7 @@
 
     (let ((auth-sources (list json-file))
           (auth-source-do-cache nil))
-      (erc-services-tests--auth-source-overrides
-       #'erc--auth-source-search))))
+      (erc-services-tests--auth-source-overrides #'erc-auth-source-search))))
 
 ;; auth-source-secrets backend
 
@@ -401,8 +382,7 @@
                  (should (equal col "Test"))
                  (assoc-default label entries))))
 
-      (erc-services-tests--auth-source-standard
-       #'erc--auth-source-search))))
+      (erc-services-tests--auth-source-standard #'erc-auth-source-search))))
 
 (ert-deftest erc--auth-source-search--secrets-announced ()
   (skip-unless (bound-and-true-p secrets-enabled))
@@ -425,8 +405,7 @@
                  (should (equal col "Test"))
                  (assoc-default label entries))))
 
-      (erc-services-tests--auth-source-announced
-       #'erc--auth-source-search))))
+      (erc-services-tests--auth-source-announced #'erc-auth-source-search))))
 
 (ert-deftest erc--auth-source-search--secrets-overrides ()
   (skip-unless (bound-and-true-p secrets-enabled))
@@ -468,8 +447,7 @@
                  (should (equal col "Test"))
                  (assoc-default label entries))))
 
-      (erc-services-tests--auth-source-overrides
-       #'erc--auth-source-search))))
+      (erc-services-tests--auth-source-overrides #'erc-auth-source-search))))
 
 ;; auth-source-pass backend
 
@@ -509,7 +487,7 @@
               ((symbol-function 'auth-source-pass-entries)
                (lambda () (mapcar #'car store))))
 
-      (erc-services-tests--auth-source-standard #'erc--auth-source-search))))
+      (erc-services-tests--auth-source-standard #'erc-auth-source-search))))
 
 (ert-deftest erc--auth-source-search--pass-announced ()
   (ert-skip "Pass backend not yet supported")
@@ -522,7 +500,7 @@
               ((symbol-function 'auth-source-pass-entries)
                (lambda () (mapcar #'car store))))
 
-      (erc-services-tests--auth-source-announced #'erc--auth-source-search))))
+      (erc-services-tests--auth-source-announced #'erc-auth-source-search))))
 
 (ert-deftest erc--auth-source-search--pass-overrides ()
   (ert-skip "Pass backend not yet supported")
@@ -546,7 +524,7 @@
               ((symbol-function 'auth-source-pass-entries)
                (lambda () (mapcar #'car store))))
 
-      (erc-services-tests--auth-source-overrides #'erc--auth-source-search))))
+      (erc-services-tests--auth-source-overrides #'erc-auth-source-search))))
 
 ;;;; The services module
 

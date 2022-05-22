@@ -1,6 +1,6 @@
 ;;; erc-scenarios-base-misc-regressions.el --- misc regressions scenarios -*- lexical-binding: t -*-
 
-;; Copyright (C) 2021 Free Software Foundation, Inc.
+;; Copyright (C) 2022 Free Software Foundation, Inc.
 ;;
 ;; This file is part of GNU Emacs.
 ;;
@@ -25,11 +25,6 @@
 
 (eval-when-compile (require 'erc-join))
 
-;; The added complexity of a request handler definitely stinks. But on
-;; some machines, the ordering from the selector is nondeterministic,
-;; whereas normally, the filter for the last process created (in the
-;; code) gets all the initial attention. FIXME delete obsolete comment
-
 (defun erc-scenarios--rebuffed-gapless-pass-handler (dialog exchange)
   (when (eq (erc-d-dialog-name dialog) 'pass-stub)
     (let* ((match (erc-d-exchange-match exchange 1))
@@ -38,10 +33,10 @@
       (erc-d-load-replacement-dialog dialog sym 1))))
 
 (ert-deftest erc-scenarios-base-gapless-connect ()
-  :tags '(:expensive-test)
   "Back-to-back entry-point invocations happen successfully.
 Originally from scenario rebuffed/gapless as explained in Bug#48598:
 28.0.50; buffer-naming collisions involving bouncers in ERC."
+  :tags '(:expensive-test)
   (erc-scenarios-common-with-cleanup
       ((erc-scenarios-common-dialog "base/gapless-connect")
        (erc-server-flood-penalty 0.1)
