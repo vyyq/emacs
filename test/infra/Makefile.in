@@ -39,8 +39,12 @@ cps = $$$$CI_PIPELINE_SOURCE
 define subdir_template
   $(eval target = check-$(subst /,-,$(1)))
   SUBDIR_TARGETS += $(target)
+  variables =
 
   $(eval
+    define changes
+	@echo '        - $(1)/*.el' >>$(FILE)
+    endef
     ifeq ($(findstring src, $(1)), src)
     define changes
 	@echo '        - $(1)/*.{h,c}' >>$(FILE)
@@ -61,9 +65,11 @@ define subdir_template
     define changes
 	@echo '        - admin/*.el' >>$(FILE)
     endef
-    else
-    define changes
-	@echo '        - $(1)/*.el' >>$(FILE)
+    else ifeq (lisp/erc,$(1))
+    define variables
+	@sed -i '$$$$$$$$d' $(FILE)
+	@printf '    make_params: >\n      -k -C test SELECTOR='  >>$(FILE)
+	@printf '\x27\x24(SELECTOR_EXPENSIVE)\x27 %s\n' $(target) >>$(FILE)
     endef
     endif)
 
@@ -85,6 +91,7 @@ define subdir_template
 	@echo '  variables:' >>$(FILE)
 	@echo '    target: emacs-inotify' >>$(FILE)
 	@echo '    make_params: "-k -C test $(target)"' >>$(FILE)
+	$(variables)
 endef
 
 $(foreach subdir, $(SUBDIRS), $(eval $(call subdir_template,$(subdir))))
