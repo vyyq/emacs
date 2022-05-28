@@ -36,6 +36,10 @@
 ;; This makes the autoload go to foo-loaddefs.el in the current directory.
 ;; Normal ;;;###autoload specs go to the main loaddefs file.
 
+;; This file currently contains a bunch of things marked FIXME that
+;; are only present to create identical output from the older files.
+;; These should be removed.
+
 ;;; Code:
 
 (require 'autoload)
@@ -117,8 +121,8 @@ by ;;;###foo-autoload statements."
                       (while forms
                         (let ((elem (pop forms)))
                           (if (eq (car elem) 'progn)
-                              ;; More recursion; push it to the end.
-                              (setq forms (nconc forms (cdr elem)))
+                              ;; More recursion; add it to the start.
+                              (setq forms (nconc (cdr elem) forms))
                             ;; We have something to add to the defs; do it.
                             (push (list to-file file
                                         (loaddefs-gen--prettify-autoload elem))
@@ -145,11 +149,18 @@ by ;;;###foo-autoload statements."
                   (push name prefs)))))
           ;; This output needs to always go in the main loaddefs.el,
           ;; regardless of `generated-autoload-file'.
-          (let ((form (autoload--make-defs-autoload prefs load-name)))
-            (cond
-             ((null form))       ;All defs obey the default rule, yay!
-             (t
-              (push (list main-outfile file form) defs)))))))
+          (when-let ((form (autoload--make-defs-autoload prefs load-name)))
+            ;; FIXME: For legacy reasons, the CEDET specs go elsewhere.
+            (cond ((and (string-match "/cedet/" file) local-outfile)
+                   (push (list local-outfile file form) defs))
+                  ((string-match "/cedet/\\(semantic\\|srecode\\|ede\\)/"
+                                 file)
+                   (push (list (concat (substring file 0 (match-end 0))
+                                       "loaddefs.el")
+                               file form)
+                         defs))
+                  (t
+                   (push (list main-outfile file form) defs)))))))
 
     (if package-defs
         (nconc defs (list (list (or local-outfile main-outfile) file
@@ -287,7 +298,8 @@ directory or directories specified."
     (setq command-line-args-left nil)
     (let ((autoload-builtin-package-versions t))
       (loaddefs-gen--generate
-       args "loaddefs.el" (loaddefs-gen--excluded-files)))))
+       args (expand-file-name "loaddefs.el" lisp-directory)
+       (loaddefs-gen--excluded-files)))))
 
 (provide 'loaddefs-gen)
 
