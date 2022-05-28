@@ -35,9 +35,8 @@
 
 (defun erc-scenarios-common--base-association-multi-net (second-join)
   (erc-scenarios-common-with-cleanup
-      ((erc-scenarios-common-dialog "base/association/multi-net")
+      ((erc-scenarios-common-dialog "base/assoc/multi-net")
        (erc-server-flood-penalty 0.1)
-       (erc-d-linger-secs 1)
        (dumb-server-foonet-buffer (get-buffer-create "*server-foonet*"))
        (dumb-server-barnet-buffer (get-buffer-create "*server-barnet*"))
        (dumb-server-foonet (erc-d-run "localhost" t "server-foonet" 'foonet))
@@ -118,9 +117,8 @@
 (ert-deftest erc-scenarios-base-association-bouncer-history ()
   :tags '(:expensive-test)
   (erc-scenarios-common-with-cleanup
-      ((erc-scenarios-common-dialog "base/association/bouncer-history")
+      ((erc-scenarios-common-dialog "base/assoc/bouncer-history")
        (erc-d-t-cleanup-sleep-secs 1)
-       (erc-d-linger-secs 2)
        (dumb-server (erc-d-run "localhost" t 'foonet 'barnet))
        (port (process-contact dumb-server :service))
        (erc-server-flood-penalty 0.5)
@@ -187,10 +185,8 @@
 
     (ert-info ("All output sent")
       (with-current-buffer "#chan@foonet"
-        (while (accept-process-output erc-server-process-foo))
-        (erc-d-t-search-for 3 "please your lordship"))
+        (erc-d-t-search-for 10 "please your lordship"))
       (with-current-buffer "#chan@barnet"
-        (while (accept-process-output erc-server-process-bar))
-        (erc-d-t-search-for 30 "I'll bid adieu")))))
+        (erc-d-t-search-for 10 "I'll bid adieu")))))
 
 ;;; erc-scenarios-base-association.el ends here

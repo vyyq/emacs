@@ -29,7 +29,6 @@
   :tags '(:expensive-test)
   (erc-scenarios-common-with-cleanup
       ((erc-scenarios-common-dialog "base/flood")
-       (erc-d-linger-secs 0.8)
        (dumb-server (erc-d-run "localhost" t 'soju))
        (port (process-contact dumb-server :service))
        (erc-server-flood-penalty 0.5) ; this ratio MUST match
@@ -77,8 +76,7 @@
       (with-current-buffer "#chan/foonet"
         (funcall expect 8 "Some man or other"))
       (with-current-buffer "#chan/barnet"
-        (while (accept-process-output erc-server-process))
-        (funcall expect 5 "That's he that was Othello")))))
+        (funcall expect 10 "That's he that was Othello")))))
 
 ;; Corner case demoing fallback behavior for an absent 004 RPL but a
 ;; present 422 or 375.  If this is unlikely enough, remove or guard
@@ -89,7 +87,6 @@
   :tags '(:expensive-test)
   (erc-scenarios-common-with-cleanup
       ((erc-scenarios-common-dialog "networks/announced-missing")
-       (erc-d-linger-secs 0.5)
        (expect (erc-d-t-make-expecter))
        (dumb-server (erc-d-run "localhost" t 'foonet))
        (port (process-contact dumb-server :service)))
@@ -114,7 +111,6 @@
   :tags '(:expensive-test)
   (erc-scenarios-common-with-cleanup
       ((erc-scenarios-common-dialog "base/mask-target-routing")
-       (erc-d-linger-secs 0.5)
        (dumb-server (erc-d-run "localhost" t 'foonet))
        (port (process-contact dumb-server :service))
        (expect (erc-d-t-make-expecter)))

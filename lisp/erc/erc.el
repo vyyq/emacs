@@ -1439,7 +1439,8 @@ if ARG is omitted or nil.
 (defvar-local erc--target nil
   "Info about a buffer's target, if any.")
 
-;; Temporary internal getter to ease transition to `erc--target' everywhere.
+;; Temporary internal getter to ease transition to `erc--target'
+;; everywhere.  Will be replaced by updated `erc-default-target'.
 (defun erc--default-target ()
   "Return target string or nil."
   (when erc--target

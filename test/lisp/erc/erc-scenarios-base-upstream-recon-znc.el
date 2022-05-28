@@ -28,6 +28,7 @@
     (require 'erc-scenarios-common)))
 
 (ert-deftest erc-scenarios-upstream-recon--znc ()
+  :tags '(:expensive-test)
   (erc-scenarios-common--upstream-reconnect
    (lambda ()
      (with-current-buffer "*status@foonet"

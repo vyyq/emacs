@@ -31,8 +31,7 @@ Overlaps some with `clash-of-chans/uniquify'.  Adapted from
 rebuffed/reuseless, described in Bug#48598: 28.0.50; buffer-naming
 collisions involving bouncers in ERC.  Run EXTRA."
   (erc-scenarios-common-with-cleanup
-      ((erc-d-linger-secs 1)
-       (dumb-server (erc-d-run "localhost" t 'foonet 'barnet))
+      ((dumb-server (erc-d-run "localhost" t 'foonet 'barnet))
        (port (process-contact dumb-server :service))
        erc-autojoin-channels-alist)
 
@@ -68,10 +67,9 @@ collisions involving bouncers in ERC.  Run EXTRA."
   :tags '(:expensive-test)
   (with-suppressed-warnings ((obsolete erc-reuse-buffers))
     (should erc-reuse-buffers))
-  (let ((erc-scenarios-common-dialog "base/reuse-buffers/server-buffers"))
+  (let ((erc-scenarios-common-dialog "base/reuse-buffers/server"))
     (erc-scenarios-common-with-cleanup
-        ((erc-d-linger-secs 1)
-         (dumb-server (erc-d-run "localhost" t 'foonet 'barnet))
+        ((dumb-server (erc-d-run "localhost" t 'foonet 'barnet))
          (port (process-contact dumb-server :service))
          erc-autojoin-channels-alist)
 
@@ -105,7 +103,7 @@ collisions involving bouncers in ERC.  Run EXTRA."
   :tags '(:expensive-test)
   (with-suppressed-warnings ((obsolete erc-reuse-buffers))
     (should erc-reuse-buffers)
-    (let ((erc-scenarios-common-dialog "base/reuse-buffers/server-buffers")
+    (let ((erc-scenarios-common-dialog "base/reuse-buffers/server")
           erc-reuse-buffers)
       (erc-scenarios-common--base-reuse-buffers-server-buffers nil))))
 
@@ -214,11 +212,9 @@ Adapted from scenario clash-of-chans/uniquify described in Bug#48598:
 
     (ert-info ("All output sent")
       (with-current-buffer "#chan/127.0.0.1<3>"
-        (while (accept-process-output server-process-foo))
-        (funcall expect 3 "most lively"))
+        (funcall expect 10 "most lively"))
       (with-current-buffer "#chan/127.0.0.1<4>"
-        (while (accept-process-output server-process-bar))
-        (funcall expect 3 "soul black")))
+        (funcall expect 10 "soul black")))
 
     ;; TODO ensure the exact <N>'s aren't reassigned during killing as
     ;; they are when the option is on.
@@ -233,7 +229,7 @@ Adapted from scenario clash-of-chans/uniquify described in Bug#48598:
   :tags '(:expensive-test)
   (with-suppressed-warnings ((obsolete erc-reuse-buffers))
     (should erc-reuse-buffers)
-    (let ((erc-scenarios-common-dialog "base/reuse-buffers/channel-buffers")
+    (let ((erc-scenarios-common-dialog "base/reuse-buffers/channel")
           (erc-server-flood-penalty 0.1)
           erc-reuse-buffers)
       (erc-scenarios-common--base-reuse-buffers-server-buffers

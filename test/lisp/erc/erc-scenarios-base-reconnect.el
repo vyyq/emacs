@@ -161,11 +161,10 @@
 (ert-deftest erc-scenarios-base-association-reconnect-playback ()
   :tags '(:expensive-test)
   (erc-scenarios-common-with-cleanup
-      ((erc-scenarios-common-dialog "base/association/reconnect-playback")
-       (erc-d-linger-secs 0.5)
+      ((erc-scenarios-common-dialog "base/assoc/reconplay")
        (erc-server-flood-penalty 0.1)
        (erc-server-flood-margin 30)
-       (dumb-server (erc-d-run "localhost" t 'foonet 'foonet-again))
+       (dumb-server (erc-d-run "localhost" t 'foonet 'again))
        (port (process-contact dumb-server :service))
        (expect (erc-d-t-make-expecter))
        erc-autojoin-channels-alist

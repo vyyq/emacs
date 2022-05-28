@@ -125,6 +125,7 @@
       (erc-auth-source-parameters-join-function nil)
       (erc-autojoin-channels-alist nil)
       (erc-server-auto-reconnect nil)
+      (erc-d-linger-secs 10)
       ,@bindings)))
 
 (defmacro erc-scenarios-common-with-cleanup (bindings &rest body)
@@ -150,8 +151,7 @@ Dialog resource directories are located by expanding the variable
            (dolist (buf (buffer-list))
              (when-let ((erc-d-u--process-buffer)
                         (proc (get-buffer-process buf)))
-               (erc-d-t-wait-for 5 "Dumb server dies on its own"
-                 (not (process-live-p proc)))))
+               (delete-process proc)))
 
            (erc-scenarios-common--remove-silence)
 
@@ -226,7 +226,7 @@ this now just asserts baseline behavior.  Originally from scenario
 clash-of-chans/rename-buffers as explained in Bug#48598: 28.0.50;
 buffer-naming collisions involving bouncers in ERC."
   (erc-scenarios-common-with-cleanup
-      ((erc-scenarios-common-dialog "base/network-id/bouncer")
+      ((erc-scenarios-common-dialog "base/netid/bouncer")
        (erc-d-t-cleanup-sleep-secs 1)
        (erc-server-flood-penalty 0.1)
        (dumb-server (apply #'erc-d-run "localhost" t dialogs))
@@ -286,18 +286,16 @@ buffer-naming collisions involving bouncers in ERC."
         (erc-d-t-search-for 1 "<bob>")
         (erc-d-t-absent-for 0.1 "<joe>")
         (should (eq erc-server-process erc-server-process-foo))
-        (while (accept-process-output erc-server-process-foo))
-        (erc-d-t-search-for 1 "ape is dead")
-        (should-not (erc-server-process-alive))))
+        (erc-d-t-search-for 10 "ape is dead")
+        (erc-d-t-wait-for 5 (not (erc-server-process-alive)))))
 
     (ert-info ("#chan@<esid> is exclusive to barnet")
       (with-current-buffer chan-buf-bar
         (erc-d-t-search-for 1 "<joe>")
         (erc-d-t-absent-for 0.1 "<bob>")
         (should (eq erc-server-process erc-server-process-bar))
-        (while (accept-process-output erc-server-process-bar))
-        (erc-d-t-search-for 1 "keeps you from dishonour")
-        (should-not (erc-server-process-alive))))
+        (erc-d-t-search-for 10 "keeps you from dishonour")
+        (erc-d-t-wait-for 5 (not (erc-server-process-alive)))))
 
     (when after (funcall after))))
 
@@ -326,15 +324,13 @@ buffer-naming collisions involving bouncers in ERC."
              (with-current-buffer (if foo-id "#chan@oofnet" "#chan@foonet")
                (erc-d-t-search-for 1 "<alice>")
                (erc-d-t-absent-for 0.1 "<joe>")
-               (while (accept-process-output erc-server-process))
                (erc-d-t-search-for 20 "please your lordship")))
 
            (ert-info ("#chan@barnet is exclusive to barnet")
              (with-current-buffer (if bar-id "#chan@rabnet" "#chan@barnet")
                (erc-d-t-search-for 1 "<joe>")
                (erc-d-t-absent-for 0.1 "<bob>")
-               (while (accept-process-output erc-server-process))
-               (erc-d-t-search-for 1 "much in private")))
+               (erc-d-t-search-for 20 "much in private")))
 
            ;; XXX this is important (reconnects overlapped, so we'd get
            ;; chan@127.0.0.1:6667)
@@ -396,14 +392,12 @@ buffer-naming collisions involving bouncers in ERC."
       (funcall expect 5 "#chan was created on ")
       (ert-info ("Joined again #chan@foonet")
         (funcall expect 10 "#chan was created on "))
-      (while (accept-process-output erc-server-process))
-      (funcall expect 1 "My lord, in heart"))
+      (funcall expect 10 "My lord, in heart"))
 
     (with-current-buffer (erc-d-t-wait-for 5 (get-buffer "#chan@barnet"))
       (funcall expect 5 "#chan was created on ")
       (ert-info ("Joined again #chan@barnet")
         (funcall expect 10 "#chan was created on "))
-      (while (accept-process-output erc-server-process))
       (funcall expect 10 "Go to; farewell"))
 
     (funcall test)))
@@ -510,13 +504,11 @@ Bug#48598: 28.0.50; buffer-naming collisions involving bouncers in ERC."
         (erc-d-t-wait-for 3 (eq erc-server-process erc-server-process-foo))
         (funcall expect 3 "<bob>")
         (erc-d-t-absent-for 0.1 "<joe>")
-        (while (accept-process-output erc-server-process-foo))
-        (funcall expect 3 "not given me")))
+        (funcall expect 10 "not given me")))
 
     (ert-info ("All #chan@barnet output received")
       (with-current-buffer chan-buf-bar
-        (while (accept-process-output erc-server-process-bar))
-        (funcall expect 3 "hath an uncle here")))))
+        (funcall expect 10 "hath an uncle here")))))
 
 (provide 'erc-scenarios-common)
 

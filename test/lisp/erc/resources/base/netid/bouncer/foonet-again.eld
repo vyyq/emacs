@@ -47,4 +47,4 @@
  (0.1 ":bob!~u@svpn88yjcdj42.irc PRIVMSG #chan :alice: That I must love a loathed enemy.")
  (0.1 ":alice!~u@svpn88yjcdj42.irc PRIVMSG #chan :bob: As't please your lordship: I'll leave you."))
 
-((linger 3 LINGER))
+((linger 10 LINGER))

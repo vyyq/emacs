@@ -24,9 +24,10 @@ confusion remain but will die out with the adoption of emerging
 protocol extensions.
 
 ** Option 'erc-rename-buffers' deprecated.
-The promise of its old "on" state are now fully realized and enabled
-permanently by default.  Its old behavior when disabled has been
-preserved and will remain available (with warnings) for years to come.
+The promises made by its old "on" state are now fully realized and
+enabled permanently by default.  Its old behavior when disabled has
+been preserved and will remain available (with warnings) for years to
+come.
 
 ** Option 'erc-reuse-buffers' deprecated.
 This ancient option has been a constant source of confusion, as
@@ -52,13 +53,15 @@ transition to SASL-based authentication still underway, users may feel
 left in the lurch to endure yet another release cycle of backtick
 hell.  For some, auth-source may provide a workaround in the form of
 nonstandard server passwords.  See the "Connection" node in the manual
-under the subheading "Password".  If you require SASL immediately,
-please participate in ERC development by volunteering to try (and give
-feedback on) edge features, one of which is SASL.  All known external
-offerings, past and present, are makeshift efforts whose use is
-discouraged.  This includes the instructions on Libera.Chat's website.
+under the subheading "Password".
 
-** Username argument for entry point commands.
+If you require SASL immediately, please participate in ERC development
+by volunteering to try (and give feedback on) edge features, one of
+which is SASL.  All known external offerings, past and present, are
+makeshift efforts whose use is discouraged.  This includes the
+instructions on Libera.Chat's website.
+
+** Username argument for entry-point commands.
 Commands 'erc' and 'erc-tls' now accept a ':user' keyword argument,
 which, when present, becomes the first argument passed to the "USER"
 IRC command.  The traditional way of setting this globally, via
@@ -70,8 +73,8 @@ of newly created target buffers, especially during reconnection.
 
 ** Miscellaneous behavioral changes impacting the user experience.
 A bug has been fixed that saw prompts being mangled, doubled, or
-erased in server buffers upon disconnection.  Instead, prompts now
-collapse into an alternate form designated by the option
+erased in server buffers upon disconnection.  Instead, input prompts
+now collapse into an alternate form designated by the option
 'erc-prompt-hidden'.  Behavior differs for query and channel buffers
 but can be fine-tuned via the repurposed, formerly abandoned option
 'erc-hide-prompt'.
@@ -85,17 +88,20 @@ correctly.
 ** Miscellaneous behavioral changes in the library API.
 The function 'erc-network' always returns non-nil in server and target
 buffers belonging to a successfully established IRC connection, even
-after that connection is closed.  In 5.4, support for network symbols
-as keys was added for 'erc-autojoin-channels-alist'.  This has been
-extended to include explicit symbols passed to 'erc-tls' and 'erc' as
-so-called network-context identifiers via a new ':id' keyword.  The
-latter carries wider significance beyond autojoin and can be used for
-uniquely and unequivocally identifying a connection.  The function
-'erc-auto-query', unused internally, and basically inscrutable when
-read, has been deprecated with no public replacement.  Which raises
-the issue: if you use ERC as a library and need something that's only
-offered internally, please lobby for its exporting by writing to
-emacs-erc@gnu.org.
+after that connection has been closed.
+
+In 5.4, support for network symbols as keys was added for
+'erc-autojoin-channels-alist'.  This has been extended to include
+explicit symbols passed to 'erc-tls' and 'erc' as so-called
+network-context identifiers via a new ':id' keyword.  The latter
+carries wider significance beyond autojoin and can be used for
+unequivocally identifying a connection in a human-readable way.
+
+The function 'erc-auto-query', unused internally, and basically
+inscrutable when read, has been deprecated with no public replacement.
+Which raises the issue: if you use ERC as a library and need something
+only offered internally, please lobby to have it exported by writing
+to emacs-erc@gnu.org.
 
 
 * Changes in ERC 5.4.1

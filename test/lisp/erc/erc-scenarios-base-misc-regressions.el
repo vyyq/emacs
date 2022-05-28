@@ -40,7 +40,6 @@ Originally from scenario rebuffed/gapless as explained in Bug#48598:
   (erc-scenarios-common-with-cleanup
       ((erc-scenarios-common-dialog "base/gapless-connect")
        (erc-server-flood-penalty 0.1)
-       (erc-d-linger-secs 4)
        (erc-server-flood-penalty erc-server-flood-penalty)
        (erc-d-tmpl-vars '((token . (group (| "barnet" "foonet")))))
        (erc-d-match-handlers
@@ -76,13 +75,11 @@ Originally from scenario rebuffed/gapless as explained in Bug#48598:
       (funcall expect 2 "marked as being away"))
 
     (with-current-buffer (erc-d-t-wait-for 20 (get-buffer "#bar"))
-      (while (accept-process-output erc-server-process))
-      (funcall expect 2 "was created on")
+      (funcall expect 10 "was created on")
       (funcall expect 2 "his second fit"))
 
     (with-current-buffer (erc-d-t-wait-for 20 (get-buffer "#foo"))
-      (while (accept-process-output erc-server-process))
-      (funcall expect 2 "was created on")
+      (funcall expect 10 "was created on")
       (funcall expect 2 "no use of him"))))
 
 ;; This defends against a regression in `erc-server-PRIVMSG' caused by
@@ -95,7 +92,6 @@ Originally from scenario rebuffed/gapless as explained in Bug#48598:
 
   (erc-scenarios-common-with-cleanup
       ((erc-scenarios-common-dialog "base/channel-buffer-revival")
-       (erc-d-linger-secs 0.5)
        (dumb-server (erc-d-run "localhost" t 'foonet))
        (port (process-contact dumb-server :service))
        erc-autojoin-channels-alist

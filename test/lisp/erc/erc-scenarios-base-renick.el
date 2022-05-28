@@ -31,7 +31,6 @@
   :tags '(:expensive-test)
   (erc-scenarios-common-with-cleanup
       ((erc-scenarios-common-dialog "base/renick/self")
-       (erc-d-linger-secs 0.1)
        (erc-server-flood-penalty 0.1)
        (dumb-server (erc-d-run "localhost" t 'auto))
        (port (process-contact dumb-server :service))
@@ -62,7 +61,6 @@
   :tags '(:expensive-test)
   (erc-scenarios-common-with-cleanup
       ((erc-scenarios-common-dialog "base/renick/self")
-       (erc-d-linger-secs 0.1)
        (erc-server-flood-penalty 0.1)
        (dumb-server (erc-d-run "localhost" t 'manual))
        (port (process-contact dumb-server :service))
@@ -158,7 +156,6 @@
 
   (erc-scenarios-common-with-cleanup
       ((erc-scenarios-common-dialog "base/renick/queries")
-       (erc-d-linger-secs 0.1)
        (erc-server-flood-penalty 0.1)
        (erc-server-flood-margin 20)
        (dumb-server (erc-d-run "localhost" t 'solo))
@@ -214,7 +211,6 @@
 
   (erc-scenarios-common-with-cleanup
       ((erc-scenarios-common-dialog "base/renick/queries")
-       (erc-d-linger-secs 1.5)
        (erc-server-flood-penalty 0.1)
        (erc-server-flood-margin 30)
        (dumb-server (erc-d-run "localhost" t 'bouncer-foonet 'bouncer-barnet))
@@ -304,7 +300,6 @@
     (with-current-buffer "#chan@barnet"
       (funcall expect 10 "is now known as frenemy")
       (should-not (search-forward "now known as frenemy" nil t))
-      (while (accept-process-output erc-server-process))
       (erc-d-t-search-for 25 "I have lost"))))
 
 ;;; erc-scenarios-base-renick.el ends here

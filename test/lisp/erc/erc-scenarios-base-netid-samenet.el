@@ -31,7 +31,7 @@
      (&key nick id server chan
            &aux (nick-b nick) (id-b id) (serv-buf-b server) (chan-buf-b chan)))
   (erc-scenarios-common-with-cleanup
-      ((erc-scenarios-common-dialog "base/network-id/same-network")
+      ((erc-scenarios-common-dialog "base/netid/samenet")
        (dumb-server (erc-d-run "localhost" t 'tester 'chester))
        (port (process-contact dumb-server :service))
        (expect (erc-d-t-make-expecter))

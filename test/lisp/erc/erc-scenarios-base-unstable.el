@@ -32,11 +32,9 @@
   (skip-unless (featurep 'make-network-process '(:family local)))
   (erc-scenarios-common-with-cleanup
       ((erc-scenarios-common-dialog "base/renick/self")
-       (erc-d-linger-secs 0.1)
        (erc-server-flood-penalty 0.1)
        (sock (expand-file-name "erc-d.sock" temporary-file-directory))
-       (erc-scenarios-common-extra-teardown (lambda ()
-                                              (delete-file sock)))
+       (erc-scenarios-common-extra-teardown (lambda () (delete-file sock)))
        (erc-server-connect-function
         (lambda (n b _ p &rest r)
           (apply #'make-network-process
@@ -70,7 +68,6 @@
   (erc-scenarios-common-with-cleanup
       ((erc-scenarios-common-dialog "base/reconnect")
        (erc-d-t-cleanup-sleep-secs 1)
-       (erc-d-linger-secs 0.5)
        (dumb-server (erc-d-run "localhost" t 'aborted 'aborted-dupe))
        (port (process-contact dumb-server :service))
        erc-autojoin-channels-alist

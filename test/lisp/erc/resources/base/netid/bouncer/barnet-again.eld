@@ -47,4 +47,4 @@
  (0.1 ":mike!~u@xrir8fpe4d7ak.irc PRIVMSG #chan :joe: Madam, within; but never man so chang'd.")
  (0.1 ":joe!~u@xrir8fpe4d7ak.irc PRIVMSG #chan :mike: As much in private, and I'll bid adieu."))
 
-((linger 4 LINGER))
+((linger 10 LINGER))

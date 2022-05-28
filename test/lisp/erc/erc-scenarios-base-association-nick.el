@@ -36,8 +36,8 @@
 (ert-deftest erc-scenarios-base-association-nick-bumped ()
   :tags '(:expensive-test)
   (erc-scenarios-common-with-cleanup
-      ((erc-scenarios-common-dialog "base/association/nick-bump")
-       (dumb-server (erc-d-run "localhost" t 'renicked 'renicked-again))
+      ((erc-scenarios-common-dialog "base/assoc/bumped")
+       (dumb-server (erc-d-run "localhost" t 'renicked 'again))
        (port (process-contact dumb-server :service))
        (expect (erc-d-t-make-expecter))
        (erc-server-flood-penalty 0.5)
@@ -102,9 +102,8 @@
 (ert-deftest erc-scenarios-base-association-nick-bumped-mandated-renick ()
   :tags '(:expensive-test)
   (erc-scenarios-common-with-cleanup
-      ((erc-scenarios-common-dialog "base/association/nick-bump")
-       (dumb-server (erc-d-run "localhost" t
-                               'renicked-foisted 'renicked-foisted-again))
+      ((erc-scenarios-common-dialog "base/assoc/bumped")
+       (dumb-server (erc-d-run "localhost" t 'foisted 'refoisted))
        (port (process-contact dumb-server :service))
        (expect (erc-d-t-make-expecter))
        (erc-server-flood-penalty 0.5)

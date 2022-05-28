@@ -34,7 +34,7 @@
   (erc-scenarios-common-with-cleanup
       ;; These actually *are* (assigned-)network-id related because
       ;; our kludge assigns one after the fact.
-      ((erc-scenarios-common-dialog "base/network-id/bouncer")
+      ((erc-scenarios-common-dialog "base/netid/bouncer")
        (erc-d-t-cleanup-sleep-secs 1)
        (erc-server-flood-penalty 0.1)
        (dumb-server (apply #'erc-d-run "localhost" t dialogs))
@@ -98,18 +98,16 @@
         (erc-d-t-search-for 1 "<bob>")
         (erc-d-t-absent-for 0.1 "<joe>")
         (should (eq erc-server-process erc-server-process-foo))
-        (while (accept-process-output erc-server-process-foo))
-        (erc-d-t-search-for 1 "ape is dead")
-        (should-not (erc-server-process-alive))))
+        (erc-d-t-search-for 10 "ape is dead")
+        (erc-d-t-wait-for 5 (not (erc-server-process-alive)))))
 
     (ert-info ("#chan@127.0.0.1:$port<2> is exclusive to barnet")
       (with-current-buffer chan-buf-bar
         (erc-d-t-search-for 1 "<joe>")
         (erc-d-t-absent-for 0.1 "<bob>")
         (should (eq erc-server-process erc-server-process-bar))
-        (while (accept-process-output erc-server-process-bar))
-        (erc-d-t-search-for 1 "keeps you from dishonour")
-        (should-not (erc-server-process-alive))))
+        (erc-d-t-search-for 10 "keeps you from dishonour")
+        (erc-d-t-wait-for 5 (not (erc-server-process-alive)))))
 
     (when more (funcall more))))
 
@@ -149,14 +147,12 @@
                (with-current-buffer  (format "#chan@127.0.0.1:%d" port)
                  (erc-d-t-search-for 1 "<alice>")
                  (erc-d-t-absent-for 0.1 "<joe>")
-                 (while (accept-process-output erc-server-process))
                  (erc-d-t-search-for 10 "please your lordship")))
 
              (ert-info ("#chan@barnet is exclusive to barnet")
                (with-current-buffer  (format "#chan@127.0.0.1:%d<2>" port)
                  (erc-d-t-search-for 1 "<joe>")
                  (erc-d-t-absent-for 0.1 "<bob>")
-                 (while (accept-process-output erc-server-process))
                  (erc-d-t-search-for 1 "much in private")))
 
              ;; Ordering deterministic here even though not so for reconnect

@@ -33,8 +33,8 @@
 
 (defun erc-scenarios-common--base-association-samenet (after)
   (erc-scenarios-common-with-cleanup
-      ((erc-scenarios-common-dialog "base/association/same-network")
-       (dumb-server (erc-d-run "localhost" t 'tester 'chester 'tester-again))
+      ((erc-scenarios-common-dialog "base/assoc/samenet")
+       (dumb-server (erc-d-run "localhost" t 'tester 'chester 'tester2))
        (port (process-contact dumb-server :service))
        (expect (erc-d-t-make-expecter))
        (erc-server-flood-penalty 0.5)
