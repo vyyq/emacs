@@ -187,8 +187,11 @@ If PACKAGE-ONLY, only return the package info."
     (autoload--make-defs-autoload prefs load-name)))
 
 (defun loaddefs-gen--prettify-autoload (autoload)
+  ;; FIXME: All this is just to emulate the current look -- it should
+  ;; probably all go.
   (with-temp-buffer
-    (prin1 autoload (current-buffer) t)
+    (prin1 autoload (current-buffer) '(t (escape-newlines . t)
+                                         (escape-control-characters . t)))
     (goto-char (point-min))
     (when (looking-at-p "(autoload \\|(defvar \\|(defconst \\|(defvar-local ")
       (forward-char 1)
@@ -203,6 +206,12 @@ If PACKAGE-ONLY, only return the package info."
                           (progn
                             (forward-sexp 1)
                             (point)))
+        (goto-char (point-min))
+        (while (search-forward "\\n" nil t)
+          (replace-match "\n" t t))
+        (goto-char (point-min))
+        (while (search-forward "\\11" nil t)
+          (replace-match "\t" t t))
         (goto-char (point-min))
         (while (search-forward "\n(" nil t)
           (replace-match "\n\\(" t t))
