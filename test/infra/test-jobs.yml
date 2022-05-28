@@ -214,15 +214,12 @@ test-lisp-erc-inotify:
     - if: '$CI_PIPELINE_SOURCE == "schedule"'
       when: never
     - changes:
-        - test/infra/*
         - lisp/erc/*.el
         - test/lisp/erc/*.el
         - test/lisp/erc/*resources/**
-        - test/lisp/erc/**/*
   variables:
     target: emacs-inotify
-    make_params: >
-      -k -C test SELECTOR='$(SELECTOR_EXPENSIVE)' check-lisp-erc check-lisp-erc-erc-scenarios
+    make_params: "-k -C test check-lisp-erc"
 
 test-lisp-eshell-inotify:
   stage: normal

@@ -114,7 +114,6 @@ default:
         - lisp/emacs-lisp/*.el
         - src/*.{h,c}
         - test/infra/*
-        - test/lisp/erc/*
     - changes:
         # gfilemonitor, kqueue
         - src/gfilenotify.c
