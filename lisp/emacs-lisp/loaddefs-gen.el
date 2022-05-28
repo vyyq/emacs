@@ -47,12 +47,14 @@
 (defconst loaddefs-gen--autoload-regexp
   "^;;;###\\([-a-z0-9A-Z]+\\)?autoload")
 
-(defun loaddefs-gen--parse-file (file main-outfile)
+(defun loaddefs-gen--parse-file (file main-outfile &optional package-only)
   "Examing FILE for ;;;###autoload statements.
 MAIN-OUTFILE is the main loaddefs file these statements are
 destined for, but this can be overriden by the buffer-local
 setting of `generated-autoload-file' in FILE, and
-by ;;;###foo-autoload statements."
+by ;;;###foo-autoload statements.
+
+If PACKAGE-ONLY, only return the package info."
   (let ((defs nil)
         (load-name (autoload-file-load-name file main-outfile))
         ;; FIXME: Probably remove.
@@ -77,21 +79,23 @@ by ;;;###foo-autoload statements."
         (when (re-search-forward "no-update-autoloads: *" nil t)
           (setq inhibit-autoloads (read (current-buffer)))))
 
-      ;; Obey the no-update-autoloads file local variable.
-      (unless inhibit-autoloads
-        (when autoload-builtin-package-versions
-          (let ((version (lm-header "version"))
-                package)
-            (when (and version
-                       (setq version (ignore-errors (version-to-list version)))
-                       (setq package (or (lm-header "package")
-                                         (file-name-sans-extension
-                                          (file-name-nondirectory file)))))
-              ;; FIXME: Push directly to defs.
-              (setq package-defs
-                    `(push (purecopy ',(cons (intern package) version))
-                           package--builtin-versions)))))
+      ;; We always return the package version (even for pre-dumped
+      ;; files).
+      (let ((version (lm-header "version"))
+            package)
+        (when (and version
+                   (setq version (ignore-errors (version-to-list version)))
+                   (setq package (or (lm-header "package")
+                                     (file-name-sans-extension
+                                      (file-name-nondirectory file)))))
+          ;; FIXME: Push directly to defs.
+          (setq package-defs
+                `(push (purecopy ',(cons (intern package) version))
+                       package--builtin-versions))))
 
+      ;; Obey the `no-update-autoloads' file local variable.
+      (when (and (not inhibit-autoloads)
+                 (not package-only))
         (goto-char (point-min))
         ;; The cookie might be like ;;;###tramp-autoload...
         (while (re-search-forward loaddefs-gen--autoload-regexp nil t)
@@ -130,33 +134,35 @@ by ;;;###foo-autoload statements."
                                         (loaddefs-gen--prettify-autoload elem))
                                   defs)))))))
               ;; Just put the rest of the line into the loaddefs.
+              ;; FIXME: We skip the first space if there's more
+              ;; whitespace after.
+              (when (looking-at-p " [\t ]")
+                (forward-char 1))
               (push (list to-file file
                           (buffer-substring (point) (line-end-position)))
-                    defs)))))
+                    defs))))
 
-      (when (and autoload-compute-prefixes
-                 (not inhibit-prefs)
-                 (not inhibit-autoloads))
-        (when-let ((form (loaddefs-gen--compute-prefixes load-name)))
-          ;; This output needs to always go in the main loaddefs.el,
-          ;; regardless of `generated-autoload-file'.
+        (when (and autoload-compute-prefixes (not inhibit-prefs))
+          (when-let ((form (loaddefs-gen--compute-prefixes load-name)))
+            ;; This output needs to always go in the main loaddefs.el,
+            ;; regardless of `generated-autoload-file'.
 
-          ;; FIXME: Not necessary.
-          (setq form (loaddefs-gen--prettify-autoload form))
+            ;; FIXME: Not necessary.
+            (setq form (loaddefs-gen--prettify-autoload form))
 
-          ;; FIXME: For legacy reasons, many specs go elsewhere.
-          (cond ((and (string-match "/cedet/" file) local-outfile)
-                 (push (list local-outfile file form) defs))
-                ((string-match "/cedet/\\(semantic\\|srecode\\|ede\\)/"
-                               file)
-                 (push (list (concat (substring file 0 (match-end 0))
-                                     "loaddefs.el")
-                             file form)
-                       defs))
-                (local-outfile
-                 (push (list local-outfile file form) defs))
-                (t
-                 (push (list main-outfile file form) defs))))))
+            ;; FIXME: For legacy reasons, many specs go elsewhere.
+            (cond ((and (string-match "/cedet/" file) local-outfile)
+                   (push (list local-outfile file form) defs))
+                  ((string-match "/cedet/\\(semantic\\|srecode\\)/"
+                                 file)
+                   (push (list (concat (substring file 0 (match-end 0))
+                                       "loaddefs.el")
+                               file form)
+                         defs))
+                  (local-outfile
+                   (push (list local-outfile file form) defs))
+                  (t
+                   (push (list main-outfile file form) defs)))))))
 
     (if package-defs
         (nconc defs (list (list (or local-outfile main-outfile) file
@@ -184,7 +190,7 @@ by ;;;###foo-autoload statements."
   (with-temp-buffer
     (prin1 autoload (current-buffer) t)
     (goto-char (point-min))
-    (when (looking-at-p "(autoload \\|(defvar \\|(defconst ")
+    (when (looking-at-p "(autoload \\|(defvar \\|(defconst \\|(defvar-local ")
       (forward-char 1)
       (ignore-errors
         (forward-sexp 3)
@@ -205,7 +211,7 @@ by ;;;###foo-autoload statements."
     (insert "\n")
     (buffer-string)))
 
-(defun loaddefs-gen--generate (dir output-file &optional exclude-files)
+(defun loaddefs-gen--generate (dir output-file &optional excluded-files)
   "Generate loaddefs files for Lisp files in the directories DIRS.
 DIR can be either a single directory or a list of
 directories.
@@ -239,12 +245,13 @@ directory or directories specified."
                      0 (length files) nil 10))
           (file-count 0))
       (dolist (file files)
-        ;; Do not insert autoload entries for excluded files.
         (progress-reporter-update progress (setq file-count (1+ file-count)))
-        (unless (member (expand-file-name file) exclude-files)
-          (setq defs (nconc
-		      (loaddefs-gen--parse-file file output-file)
-                      defs))))
+        ;; Do not insert autoload entries for excluded files.
+        (setq defs (nconc
+		    (loaddefs-gen--parse-file
+                     file output-file
+                     (member (expand-file-name file) excluded-files))
+                    defs)))
       (progress-reporter-done progress))
 
     ;; Generate the loaddef files.  First group per output file.
@@ -312,10 +319,9 @@ directory or directories specified."
   ;; For use during the Emacs build process only.
   (let ((args command-line-args-left))
     (setq command-line-args-left nil)
-    (let ((autoload-builtin-package-versions t))
-      (loaddefs-gen--generate
-       args (expand-file-name "loaddefs.el" lisp-directory)
-       (loaddefs-gen--excluded-files)))))
+    (loaddefs-gen--generate
+     args (expand-file-name "loaddefs.el" lisp-directory)
+     (loaddefs-gen--excluded-files))))
 
 (provide 'loaddefs-gen)
 
