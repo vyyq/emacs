@@ -44,6 +44,9 @@
 
 (require 'autoload)
 
+(defconst loaddefs-gen--autoload-regexp
+  "^;;;###\\([-a-z0-9A-Z]+\\)?autoload")
+
 (defun loaddefs-gen--parse-file (file main-outfile)
   "Examing FILE for ;;;###autoload statements.
 MAIN-OUTFILE is the main loaddefs file these statements are
@@ -51,9 +54,10 @@ destined for, but this can be overriden by the buffer-local
 setting of `generated-autoload-file' in FILE, and
 by ;;;###foo-autoload statements."
   (let ((defs nil)
-        (regexp "^;;;###\\([-a-z0-9A-Z]+\\)?autoload")
         (load-name (autoload-file-load-name file main-outfile))
-        local-outfile inhibit-prefs package-defs
+        ;; FIXME: Probably remove.
+        (inhibit-prefs nil)
+        local-outfile package-defs
         inhibit-autoloads)
     (with-temp-buffer
       (insert-file-contents file)
@@ -90,7 +94,7 @@ by ;;;###foo-autoload statements."
 
         (goto-char (point-min))
         ;; The cookie might be like ;;;###tramp-autoload...
-        (while (re-search-forward regexp nil t)
+        (while (re-search-forward loaddefs-gen--autoload-regexp nil t)
           ;; ... and if we have one of these names, then alter outfile.
           (let* ((aname (match-string 1))
                  (to-file (if aname
@@ -98,8 +102,6 @@ by ;;;###foo-autoload statements."
                                (concat aname "loaddefs.el")
                                (file-name-directory file))
                             (or local-outfile main-outfile))))
-            (when aname
-              (setq inhibit-prefs t))
             (if (eolp)
                 ;; We have a form following.
                 (let* ((form (prog1
@@ -132,46 +134,57 @@ by ;;;###foo-autoload statements."
                           (buffer-substring (point) (line-end-position)))
                     defs)))))
 
-      (when (and autoload-compute-prefixes (not inhibit-prefs))
-        (goto-char (point-min))
-        (let ((prefs nil))
-          ;; Avoid (defvar <foo>) by requiring a trailing space.
-          (while (re-search-forward
-                  "^(\\(def[^ ]+\\) ['(]*\\([^' ()\"\n]+\\)[\n \t]" nil t)
-            (unless (member (match-string 1) autoload-ignored-definitions)
-              (let ((name (match-string-no-properties 2)))
-                (when (save-excursion
-                        (goto-char (match-beginning 0))
-                        (or (bobp)
-                            (progn
-                              (forward-line -1)
-                              (not (looking-at regexp)))))
-                  (push name prefs)))))
+      (when (and autoload-compute-prefixes
+                 (not inhibit-prefs)
+                 (not inhibit-autoloads))
+        (when-let ((form (loaddefs-gen--compute-prefixes load-name)))
           ;; This output needs to always go in the main loaddefs.el,
           ;; regardless of `generated-autoload-file'.
-          (when-let ((form (autoload--make-defs-autoload prefs load-name)))
-            ;; FIXME: For legacy reasons, the CEDET specs go elsewhere.
-            (cond ((and (string-match "/cedet/" file) local-outfile)
-                   (push (list local-outfile file form) defs))
-                  ((string-match "/cedet/\\(semantic\\|srecode\\|ede\\)/"
-                                 file)
-                   (push (list (concat (substring file 0 (match-end 0))
-                                       "loaddefs.el")
-                               file form)
-                         defs))
-                  (t
-                   (push (list main-outfile file form) defs)))))))
+
+          ;; FIXME: Not necessary.
+          (setq form (loaddefs-gen--prettify-autoload form))
+
+          ;; FIXME: For legacy reasons, many specs go elsewhere.
+          (cond ((and (string-match "/cedet/" file) local-outfile)
+                 (push (list local-outfile file form) defs))
+                ((string-match "/cedet/\\(semantic\\|srecode\\|ede\\)/"
+                               file)
+                 (push (list (concat (substring file 0 (match-end 0))
+                                     "loaddefs.el")
+                             file form)
+                       defs))
+                (local-outfile
+                 (push (list local-outfile file form) defs))
+                (t
+                 (push (list main-outfile file form) defs))))))
 
     (if package-defs
         (nconc defs (list (list (or local-outfile main-outfile) file
                                 package-defs)))
       defs)))
 
+(defun loaddefs-gen--compute-prefixes (load-name)
+  (goto-char (point-min))
+  (let ((prefs nil))
+    ;; Avoid (defvar <foo>) by requiring a trailing space.
+    (while (re-search-forward
+            "^(\\(def[^ ]+\\) ['(]*\\([^' ()\"\n]+\\)[\n \t]" nil t)
+      (unless (member (match-string 1) autoload-ignored-definitions)
+        (let ((name (match-string-no-properties 2)))
+          (when (save-excursion
+                  (goto-char (match-beginning 0))
+                  (or (bobp)
+                      (progn
+                        (forward-line -1)
+                        (not (looking-at ";;;###autoload")))))
+            (push name prefs)))))
+    (autoload--make-defs-autoload prefs load-name)))
+
 (defun loaddefs-gen--prettify-autoload (autoload)
   (with-temp-buffer
     (prin1 autoload (current-buffer) t)
     (goto-char (point-min))
-    (when (looking-at-p "(autoload\\|(defvar\\|(defconst")
+    (when (looking-at-p "(autoload \\|(defvar \\|(defconst ")
       (forward-char 1)
       (ignore-errors
         (forward-sexp 3)
@@ -188,6 +201,8 @@ by ;;;###foo-autoload statements."
         (while (search-forward "\n(" nil t)
           (replace-match "\n\\(" t t))
         (widen)))
+    (goto-char (point-min))
+    (insert "\n")
     (buffer-string)))
 
 (defun loaddefs-gen--generate (dir output-file &optional exclude-files)
@@ -254,14 +269,15 @@ directory or directories specified."
              (file-name-sans-extension
               (file-name-nondirectory relfile))
              relfile '(0 0 0 0))
-            (insert ";;; Generated autoloads from " relfile "\n\n")
+            (insert ";;; Generated autoloads from " relfile "\n")
             (dolist (def (reverse section))
               (setq def (caddr def))
               (if (stringp def)
                   (princ def (current-buffer))
                 (prin1 def (current-buffer) t))
-              (ensure-empty-lines 1))
-            (insert ";;;***\n")))
+              (unless (bolp)
+                (insert "\n")))
+            (insert "\n;;;***\n")))
         ;; FIXME: Remove.
         (goto-char (point-min))
         (while (re-search-forward
