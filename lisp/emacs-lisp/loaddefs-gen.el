@@ -187,12 +187,19 @@ If PACKAGE-ONLY, only return the package info."
     (prin1 autoload (current-buffer) '(t (escape-newlines . t)
                                          (escape-control-characters . t)))
     (goto-char (point-min))
-    (when (looking-at-p "(autoload \\|(defvar \\|(defconst \\|(defvar-local ")
+    (when (memq (car autoload)
+                '( defun autoload defvar defconst
+                   defvar-local defsubst defcustom defmacro))
       (forward-char 1)
       (ignore-errors
         (forward-sexp 3)
         (skip-chars-forward " "))
       (when (looking-at-p "\"")
+        (let* ((start (point))
+               (doc (read (current-buffer))))
+          (delete-region start (point))
+          (prin1 doc (current-buffer) t)
+          (goto-char start))
         (save-excursion
           (forward-char 1)
           (insert "\\\n"))
@@ -200,12 +207,6 @@ If PACKAGE-ONLY, only return the package info."
                           (progn
                             (forward-sexp 1)
                             (point)))
-        (goto-char (point-min))
-        (while (search-forward "\\n" nil t)
-          (replace-match "\n" t t))
-        (goto-char (point-min))
-        (while (search-forward "\\11" nil t)
-          (replace-match "\t" t t))
         (goto-char (point-min))
         (while (search-forward "\n(" nil t)
           (replace-match "\n\\(" t t))
