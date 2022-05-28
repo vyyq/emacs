@@ -112,27 +112,21 @@ If PACKAGE-ONLY, only return the package info."
                                  (read (current-buffer))
                                (unless (bolp)
                                  (forward-line 1))))
-                       (autoload (make-autoload form load-name)))
-                  (if (not autoload)
-                      ;; It's was not transformed to an autoload spec;
-                      ;; add as is.
-                      (push (list to-file file
-                                  (loaddefs-gen--prettify-autoload form))
-                            defs)
-                    ;; We get back either an autoload form, or a tree
-                    ;; structure of `(progn ...)' things, so unravel that.
-                    (let ((forms (if (eq (car autoload) 'progn)
-                                     (cdr autoload)
-                                   (list autoload))))
-                      (while forms
-                        (let ((elem (pop forms)))
-                          (if (eq (car elem) 'progn)
-                              ;; More recursion; add it to the start.
-                              (setq forms (nconc (cdr elem) forms))
-                            ;; We have something to add to the defs; do it.
-                            (push (list to-file file
-                                        (loaddefs-gen--prettify-autoload elem))
-                                  defs)))))))
+                       (autoload (or (make-autoload form load-name) form)))
+                  ;; We get back either an autoload form, or a tree
+                  ;; structure of `(progn ...)' things, so unravel that.
+                  (let ((forms (if (eq (car autoload) 'progn)
+                                   (cdr autoload)
+                                 (list autoload))))
+                    (while forms
+                      (let ((elem (pop forms)))
+                        (if (eq (car elem) 'progn)
+                            ;; More recursion; add it to the start.
+                            (setq forms (nconc (cdr elem) forms))
+                          ;; We have something to add to the defs; do it.
+                          (push (list to-file file
+                                      (loaddefs-gen--prettify-autoload elem))
+                                defs))))))
               ;; Just put the rest of the line into the loaddefs.
               ;; FIXME: We skip the first space if there's more
               ;; whitespace after.
