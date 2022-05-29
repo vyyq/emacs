@@ -119,7 +119,7 @@ default:
 .build-template:
   needs: []
   rules:
-      when: never
+    - when: never
   script:
     - docker build --pull --target ${target} -t ${CI_REGISTRY_IMAGE}:${target}-${BUILD_TAG} -f test/infra/Dockerfile.emba .
     - docker push ${CI_REGISTRY_IMAGE}:${target}-${BUILD_TAG}
