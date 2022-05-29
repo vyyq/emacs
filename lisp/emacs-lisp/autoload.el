@@ -242,6 +242,36 @@ put the output in."
              (ignore-errors (set-file-modes file (logior modes #o0200))))))
   file)
 
+(defun autoload-insert-section-header (outbuf autoloads load-name file time)
+  "Insert into buffer OUTBUF the section-header line for FILE.
+The header line lists the file name, its \"load name\", its autoloads,
+and the time the FILE was last updated (the time is inserted only
+if `autoload-timestamps' is non-nil, otherwise a fixed fake time is inserted)."
+  ;; (cl-assert ;Make sure we don't insert it in the middle of another section.
+  ;;  (save-excursion
+  ;;    (or (not (re-search-backward
+  ;;              (concat "\\("
+  ;;                      (regexp-quote generate-autoload-section-header)
+  ;;                      "\\)\\|\\("
+  ;;                      (regexp-quote generate-autoload-section-trailer)
+  ;;                      "\\)")
+  ;;              nil t))
+  ;;        (match-end 2))))
+  (insert generate-autoload-section-header)
+  (prin1 `(autoloads ,autoloads ,load-name ,file ,time)
+	 outbuf)
+  (terpri outbuf)
+  ;; Break that line at spaces, to avoid very long lines.
+  ;; Make each sub-line into a comment.
+  (with-current-buffer outbuf
+    (save-excursion
+      (forward-line -1)
+      (while (not (eolp))
+	(move-to-column 64)
+	(skip-chars-forward "^ \n")
+	(or (eolp)
+	    (insert "\n" generate-autoload-section-continuation))))))
+
 (defun autoload-find-file (file)
   "Fetch FILE and put it in a temp buffer.  Return the buffer."
   ;; It is faster to avoid visiting the file.

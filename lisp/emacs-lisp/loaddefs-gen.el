@@ -36,10 +36,6 @@
 ;; This makes the autoload go to foo-loaddefs.el in the current directory.
 ;; Normal ;;;###autoload specs go to the main loaddefs file.
 
-;; This file currently contains a bunch of things marked FIXME that
-;; are only present to create identical output from the older files.
-;; These should be removed.
-
 ;;; Code:
 
 (require 'radix-tree)
@@ -318,8 +314,7 @@ If PACKAGE-ONLY, only return the package info."
   (let ((defs nil)
         (load-name (loaddefs-gen--file-load-name file main-outfile))
         (compute-prefixes t)
-        local-outfile package-defs
-        inhibit-autoloads)
+        local-outfile inhibit-autoloads)
     (with-temp-buffer
       (insert-file-contents file)
       (goto-char (point-max))
@@ -335,10 +330,12 @@ If PACKAGE-ONLY, only return the package info."
         (save-excursion
           (when (re-search-forward "generated-autoload-load-name: *" nil t)
             (setq load-name (read (current-buffer)))))
-        (when (re-search-forward "no-update-autoloads: *" nil t)
-          (setq inhibit-autoloads (read (current-buffer))))
-        (when (re-search-forward "autoload-compute-prefixes: *" nil t)
-          (setq compute-prefixes (read (current-buffer)))))
+        (save-excursion
+          (when (re-search-forward "no-update-autoloads: *" nil t)
+            (setq inhibit-autoloads (read (current-buffer)))))
+        (save-excursion
+          (when (re-search-forward "autoload-compute-prefixes: *" nil t)
+            (setq compute-prefixes (read (current-buffer))))))
 
       ;; We always return the package version (even for pre-dumped
       ;; files).
@@ -349,10 +346,10 @@ If PACKAGE-ONLY, only return the package info."
                    (setq package (or (lm-header "package")
                                      (file-name-sans-extension
                                       (file-name-nondirectory file)))))
-          ;; FIXME: Push directly to defs.
-          (setq package-defs
-                `(push (purecopy ',(cons (intern package) version))
-                       package--builtin-versions))))
+          (push (list (or local-outfile main-outfile) file
+                      `(push (purecopy ',(cons (intern package) version))
+                             package--builtin-versions))
+                defs)))
 
       ;; Obey the `no-update-autoloads' file local variable.
       (when (and (not inhibit-autoloads)
@@ -386,9 +383,7 @@ If PACKAGE-ONLY, only return the package info."
                             ;; More recursion; add it to the start.
                             (setq forms (nconc (cdr elem) forms))
                           ;; We have something to add to the defs; do it.
-                          (push (list to-file file
-                                      (loaddefs-gen--prettify-autoload elem))
-                                defs))))))
+                          (push (list to-file file elem) defs))))))
               ;; Just put the rest of the line into the loaddefs.
               ;; FIXME: We skip the first space if there's more
               ;; whitespace after.
@@ -403,28 +398,8 @@ If PACKAGE-ONLY, only return the package info."
           (when-let ((form (loaddefs-gen--compute-prefixes load-name)))
             ;; This output needs to always go in the main loaddefs.el,
             ;; regardless of `generated-autoload-file'.
-
-            ;; FIXME: Not necessary.
-            (setq form (loaddefs-gen--prettify-autoload form))
-
-            ;; FIXME: For legacy reasons, many specs go elsewhere.
-            (cond ((and (string-match "/cedet/" file) local-outfile)
-                   (push (list local-outfile file form) defs))
-                  ((string-match "/cedet/\\(semantic\\|srecode\\)/"
-                                 file)
-                   (push (list (concat (substring file 0 (match-end 0))
-                                       "loaddefs.el")
-                               file form)
-                         defs))
-                  (local-outfile
-                   (push (list local-outfile file form) defs))
-                  (t
-                   (push (list main-outfile file form) defs)))))))
-
-    (if package-defs
-        (nconc defs (list (list (or local-outfile main-outfile) file
-                                package-defs)))
-      defs)))
+            (push (list main-outfile file form) defs)))))
+    defs))
 
 (defun loaddefs-gen--compute-prefixes (load-name)
   (goto-char (point-min))
@@ -442,42 +417,6 @@ If PACKAGE-ONLY, only return the package info."
                         (not (looking-at ";;;###autoload")))))
             (push name prefs)))))
     (loaddefs-gen--make-prefixes prefs load-name)))
-
-(defun loaddefs-gen--prettify-autoload (autoload)
-  ;; FIXME: All this is just to emulate the current look -- it should
-  ;; probably all go.
-  (with-temp-buffer
-    (prin1 autoload (current-buffer) '(t (escape-newlines . t)
-                                         (escape-control-characters . t)))
-    (goto-char (point-min))
-    (when (memq (car autoload)
-                '( defun autoload defvar defconst
-                   defvar-local defsubst defcustom defmacro
-                   cl-defsubst))
-      (forward-char 1)
-      (ignore-errors
-        (forward-sexp 3)
-        (skip-chars-forward " "))
-      (when (looking-at-p "\"")
-        (let* ((start (point))
-               (doc (read (current-buffer))))
-          (delete-region start (point))
-          (prin1 doc (current-buffer) t)
-          (goto-char start))
-        (save-excursion
-          (forward-char 1)
-          (insert "\\\n"))
-        (narrow-to-region (point)
-                          (progn
-                            (forward-sexp 1)
-                            (point)))
-        (goto-char (point-min))
-        (while (search-forward "\n(" nil t)
-          (replace-match "\n\\(" t t))
-        (widen)))
-    (goto-char (point-min))
-    (insert "\n")
-    (buffer-string)))
 
 (defun loaddefs-gen--rubric (file &optional type feature)
   "Return a string giving the appropriate autoload rubric for FILE.
@@ -605,29 +544,44 @@ directory or directories specified."
           (let ((relfile (file-relative-name
                           (cadar section)
                           (file-name-directory (car fdefs)))))
-            (loaddefs-gen--insert-section-header
-             (current-buffer) nil
-             (file-name-sans-extension
-              (file-name-nondirectory relfile))
-             relfile '(0 0 0 0))
             (insert ";;; Generated autoloads from " relfile "\n")
             (dolist (def (reverse section))
               (setq def (caddr def))
               (if (stringp def)
                   (princ def (current-buffer))
-                (prin1 def (current-buffer) t))
+                (loaddefs-gen--print-form def))
               (unless (bolp)
                 (insert "\n")))
-            (insert "\n;;;***\n")))
-        ;; FIXME: Remove.
-        (goto-char (point-min))
-        (while (re-search-forward
-                "^;;; Generated autoloads.*\n\\(\n\\)(push" nil t)
-          (goto-char (match-end 1))
-          (delete-char -1))
+            (insert "\n")))
         (write-region (point-min) (point-max) (car fdefs) nil 'silent)
         (byte-compile-info (file-relative-name (car fdefs) lisp-directory)
                            t "GEN")))))
+
+(defun loaddefs-gen--print-form (def)
+  "Print DEF in the way make-docfile.c expects it."
+  (if (or (not (consp def))
+          (not (symbolp (car def)))
+          (not (stringp (nth 3 def))))
+      (prin1 def (current-buffer) t)
+    ;; The salient point here is that we have to have the doc string
+    ;; that starts with a backslash and a newline, and there mustn't
+    ;; be any newlines before that.  So -- typically
+    ;; (defvar foo 'value "Doc string" ...).
+    (insert "(")
+    (dotimes (_ 3)
+      (prin1 (pop def) (current-buffer)
+             '(t (escape-newlines . t)
+                 (escape-control-characters . t)))
+      (insert " "))
+    (let ((start (point)))
+      (prin1 (pop def) (current-buffer) t)
+      (save-excursion
+        (goto-char (1+ start))
+        (insert "\\\n")))
+    (while def
+      (insert " ")
+      (prin1 (pop def) (current-buffer) t))
+    (insert ")")))
 
 (defun loaddefs-gen--excluded-files ()
   ;; Exclude those files that are preloaded on ALL platforms.
