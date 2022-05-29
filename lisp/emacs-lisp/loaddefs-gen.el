@@ -44,9 +44,6 @@
 
 (require 'autoload)
 
-(defconst loaddefs-gen--autoload-regexp
-  "^;;;###\\([-a-z0-9A-Z]+\\)?autoload")
-
 (defun loaddefs-gen--parse-file (file main-outfile &optional package-only)
   "Examing FILE for ;;;###autoload statements.
 MAIN-OUTFILE is the main loaddefs file these statements are
@@ -98,9 +95,9 @@ If PACKAGE-ONLY, only return the package info."
                  (not package-only))
         (goto-char (point-min))
         ;; The cookie might be like ;;;###tramp-autoload...
-        (while (re-search-forward loaddefs-gen--autoload-regexp nil t)
+        (while (re-search-forward lisp-mode-autoload-regexp nil t)
           ;; ... and if we have one of these names, then alter outfile.
-          (let* ((aname (match-string 1))
+          (let* ((aname (match-string 2))
                  (to-file (if aname
                               (expand-file-name
                                (concat aname "loaddefs.el")
@@ -189,7 +186,8 @@ If PACKAGE-ONLY, only return the package info."
     (goto-char (point-min))
     (when (memq (car autoload)
                 '( defun autoload defvar defconst
-                   defvar-local defsubst defcustom defmacro))
+                   defvar-local defsubst defcustom defmacro
+                   cl-defsubst))
       (forward-char 1)
       (ignore-errors
         (forward-sexp 3)
