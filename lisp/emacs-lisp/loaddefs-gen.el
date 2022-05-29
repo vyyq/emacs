@@ -101,7 +101,7 @@ If PACKAGE-ONLY, only return the package info."
           (let* ((aname (match-string 2))
                  (to-file (if aname
                               (expand-file-name
-                               (concat aname "loaddefs.el")
+                               (concat aname "-loaddefs.el")
                                (file-name-directory file))
                             (or local-outfile main-outfile))))
             (if (eolp)
