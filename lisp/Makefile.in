@@ -75,10 +75,11 @@ compile-first: BYTE_COMPILE_FLAGS = \
 
 # Files to compile before others during a bootstrap.  This is done to
 # speed up the bootstrap process.  They're ordered by size, so we use
-# the slowest-compiler on the smallest file and move to larger files as the
-# compiler gets faster.  'autoload.elc' comes last because it is not used by
-# the compiler (so its compilation does not speed up subsequent compilations),
-# it's only placed here so as to speed up generation of the loaddefs.el file.
+# the slowest-compiler on the smallest file and move to larger files
+# as the compiler gets faster.  'loaddefs-gen.elc'/'radix-tree.el'
+# comes last because they're not used by the compiler (so its
+# compilation does not speed up subsequent compilations), it's only
+# placed here so as to speed up generation of the loaddefs.el files.
 
 COMPILE_FIRST = \
 	$(lisp)/emacs-lisp/macroexp.elc \
@@ -90,7 +91,6 @@ COMPILE_FIRST += $(lisp)/emacs-lisp/comp.elc
 COMPILE_FIRST += $(lisp)/emacs-lisp/comp-cstr.elc
 endif
 COMPILE_FIRST += $(lisp)/emacs-lisp/loaddefs-gen.elc
-COMPILE_FIRST += $(lisp)/emacs-lisp/autoload.elc
 COMPILE_FIRST += $(lisp)/emacs-lisp/radix-tree.elc
 
 # Files to compile early in compile-main.  Works around bug#25556.
