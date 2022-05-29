@@ -220,8 +220,7 @@ test-lisp-erc-inotify:
         - test/lisp/erc/*resources/**
   variables:
     target: emacs-inotify
-    make_params:
-      -k -C test 'SELECTOR=$(SELECTOR_EXPENSIVE)' check-lisp-erc
+    make_params: '-k -C test SELECTOR=\$\(SELECTOR_EXPENSIVE\) check-lisp-erc'
 
 test-lisp-eshell-inotify:
   stage: normal
