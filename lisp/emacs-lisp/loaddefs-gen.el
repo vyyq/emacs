@@ -54,8 +54,7 @@ by ;;;###foo-autoload statements.
 If PACKAGE-ONLY, only return the package info."
   (let ((defs nil)
         (load-name (autoload-file-load-name file main-outfile))
-        ;; FIXME: Probably remove.
-        (inhibit-prefs nil)
+        (compute-prefixes t)
         local-outfile package-defs
         inhibit-autoloads)
     (with-temp-buffer
@@ -74,7 +73,9 @@ If PACKAGE-ONLY, only return the package info."
           (when (re-search-forward "generated-autoload-load-name: *" nil t)
             (setq load-name (read (current-buffer)))))
         (when (re-search-forward "no-update-autoloads: *" nil t)
-          (setq inhibit-autoloads (read (current-buffer)))))
+          (setq inhibit-autoloads (read (current-buffer))))
+        (when (re-search-forward "autoload-compute-prefixes: *" nil t)
+          (setq compute-prefixes (read (current-buffer)))))
 
       ;; We always return the package version (even for pre-dumped
       ;; files).
@@ -133,7 +134,8 @@ If PACKAGE-ONLY, only return the package info."
                           (buffer-substring (point) (line-end-position)))
                     defs))))
 
-        (when (and autoload-compute-prefixes (not inhibit-prefs))
+        (when (and autoload-compute-prefixes
+                   compute-prefixes)
           (when-let ((form (loaddefs-gen--compute-prefixes load-name)))
             ;; This output needs to always go in the main loaddefs.el,
             ;; regardless of `generated-autoload-file'.
