@@ -86,7 +86,16 @@ default:
     # TODO: with make -j4 several of the tests were failing, for
     # example shadowfile-tests, but passed without it.
     - 'export PWD=$(pwd)'
+    - 'echo "DEBUG var_test_1: ${var_test_1}"'
+    - 'echo "DEBUG var_test_2: ${var_test_2}"'
+    - 'echo "DEBUG var_test_3: ${var_test_3}"'
+    - 'echo "DEBUG var_test_4: ${var_test_4}"'
+    - 'echo "DEBUG var_test_5: ${var_test_5}"'
+    - 'echo "DEBUG var_test_6: ${var_test_6}"'
+    - 'echo "DEBUG var_test_7: ${var_test_7}"'
     - 'echo "DEBUG make_params: ${make_params}"'
+    - >-
+      test "${make_params}" = '-k -C test SELECTOR=\$\(SELECTOR_EXPENSIVE\) check-lisp-erc'
     - >-
       docker run -i
       -e EMACS_EMBA_CI=${EMACS_EMBA_CI}
