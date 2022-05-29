@@ -86,34 +86,11 @@ default:
     # TODO: with make -j4 several of the tests were failing, for
     # example shadowfile-tests, but passed without it.
     - 'export PWD=$(pwd)'
-    - 'echo "DEBUG var_test_1: ${var_test_1}"'
-    - 'echo "DEBUG var_test_2: ${var_test_2}"'
-    - 'echo "DEBUG var_test_3: ${var_test_3}"'
-    - 'echo "DEBUG var_test_4: ${var_test_4}"'
-    - 'echo "DEBUG var_test_5: ${var_test_5}"'
-    - 'echo "DEBUG var_test_6: ${var_test_6}"'
-    - 'echo "DEBUG var_test_7: ${var_test_7}"'
+    - 'echo "DEBUG var_test: ${var_test}"'
     - 'echo "DEBUG make_params: ${make_params}"'
     - >-
-      test "${make_params}" = '-k -C test SELECTOR=\$\(SELECTOR_EXPENSIVE\) check-lisp-erc'
-    - >-
-      docker run -i
-      -e EMACS_EMBA_CI=${EMACS_EMBA_CI}
-      -e EMACS_TEST_JUNIT_REPORT=${EMACS_TEST_JUNIT_REPORT}
-      -e EMACS_TEST_TIMEOUT=${EMACS_TEST_TIMEOUT}
-      -e EMACS_TEST_VERBOSE=${EMACS_TEST_VERBOSE}
-      --volumes-from $(docker ps -q -f "label=com.gitlab.gitlab-runner.job.id=${CI_JOB_ID}"):ro
-      --name ${test_name} ${CI_REGISTRY_IMAGE}:${target}-${BUILD_TAG}
-      /bin/bash -c "
-      echo DEBUG in container ${make_params} &&
-      make -n ${make_params} &&
-      git fetch ${PWD} HEAD &&
-      echo checking out these updated files &&
-      git diff --name-only FETCH_HEAD &&
-      ( git diff --name-only FETCH_HEAD | xargs git checkout -f FETCH_HEAD ) &&
-      make -j4 &&
-      make ${make_params}
-      "
+      test "${make_params}" = "-k -C test SELECTOR='"'$(SELECTOR_EXPENSIVE)'"' check-lisp-erc"
+    - 'docker run -i -e EMACS_EMBA_CI=${EMACS_EMBA_CI} -e EMACS_TEST_JUNIT_REPORT=${EMACS_TEST_JUNIT_REPORT} -e EMACS_TEST_TIMEOUT=${EMACS_TEST_TIMEOUT} -e EMACS_TEST_VERBOSE=${EMACS_TEST_VERBOSE} --volumes-from $(docker ps -q -f "label=com.gitlab.gitlab-runner.job.id=${CI_JOB_ID}"):ro --name ${test_name} ${CI_REGISTRY_IMAGE}:${target}-${BUILD_TAG} /bin/bash -c "echo DEBUG in container ${make_params} && git fetch ${PWD} HEAD && echo checking out these updated files && git diff --name-only FETCH_HEAD && ( git diff --name-only FETCH_HEAD | xargs git checkout -f FETCH_HEAD ) && make -j4 && make ${make_params}"'
   after_script:
     # - docker ps -a
     # - printenv
