@@ -25,8 +25,8 @@
 ;; This package generates the main lisp/loaddefs.el file, as well as
 ;; all the other loaddefs files, like calendar/diary-loaddefs.el, etc.
 
-;; The main entry point is `loaddefs-gen--generate' (normally called
-;; from batch-loaddefs-gen via lisp/Makefile).
+;; The main entry point is `loaddefs-generate' (normally called
+;; from loaddefs-gen-batch via lisp/Makefile).
 ;;
 ;; The "other" loaddefs files are specified either via a file-local
 ;; setting of `generated-autoload-file', or by specifying
@@ -43,11 +43,11 @@
 
 (defvar autoload-compute-prefixes t
   "If non-nil, autoload will add code to register the prefixes used in a file.
-Standard prefixes won't be registered anyway.  I.e. if a file \"foo.el\" defines
-variables or functions that use \"foo-\" as prefix, that will not be registered.
-But all other prefixes will be included.")
+Standard prefixes won't be registered anyway.  I.e. if a file
+\"foo.el\" defines variables or functions that use \"foo-\" as
+prefix, that will not be registered.  But all other prefixes will
+be included.")
 (put 'autoload-compute-prefixes 'safe-local-variable #'booleanp)
-
 
 (defvar autoload-ignored-definitions
   '("define-obsolete-function-alias"
@@ -303,14 +303,16 @@ expression, in which case we want to handle forms differently."
 						     'string<))))))
 
 
-(defun loaddefs-gen--parse-file (file main-outfile &optional package-only)
+(defun loaddefs-gen--parse-file (file main-outfile &optional package-data)
   "Examing FILE for ;;;###autoload statements.
 MAIN-OUTFILE is the main loaddefs file these statements are
 destined for, but this can be overriden by the buffer-local
 setting of `generated-autoload-file' in FILE, and
 by ;;;###foo-autoload statements.
 
-If PACKAGE-ONLY, only return the package info."
+If PACKAGE-DATA is `only', return only the package data.  If t,
+include the package data with the rest of the data.  Otherwise,
+don't include."
   (let ((defs nil)
         (load-name (loaddefs-gen--file-load-name file main-outfile))
         (compute-prefixes t)
@@ -339,21 +341,22 @@ If PACKAGE-ONLY, only return the package info."
 
       ;; We always return the package version (even for pre-dumped
       ;; files).
-      (let ((version (lm-header "version"))
-            package)
-        (when (and version
-                   (setq version (ignore-errors (version-to-list version)))
-                   (setq package (or (lm-header "package")
-                                     (file-name-sans-extension
-                                      (file-name-nondirectory file)))))
-          (push (list (or local-outfile main-outfile) file
-                      `(push (purecopy ',(cons (intern package) version))
-                             package--builtin-versions))
-                defs)))
+      (when package-data
+        (let ((version (lm-header "version"))
+              package)
+          (when (and version
+                     (setq version (ignore-errors (version-to-list version)))
+                     (setq package (or (lm-header "package")
+                                       (file-name-sans-extension
+                                        (file-name-nondirectory file)))))
+            (push (list (or local-outfile main-outfile) file
+                        `(push (purecopy ',(cons (intern package) version))
+                               package--builtin-versions))
+                  defs))))
 
       ;; Obey the `no-update-autoloads' file local variable.
       (when (and (not inhibit-autoloads)
-                 (not package-only))
+                 (not (eq package-data 'only)))
         (goto-char (point-min))
         ;; The cookie might be like ;;;###tramp-autoload...
         (while (re-search-forward lisp-mode-autoload-regexp nil t)
@@ -459,16 +462,6 @@ FILE's name."
 The header line lists the file name, its \"load name\", its autoloads,
 and the time the FILE was last updated (the time is inserted only
 if `autoload-timestamps' is non-nil, otherwise a fixed fake time is inserted)."
-  ;; (cl-assert ;Make sure we don't insert it in the middle of another section.
-  ;;  (save-excursion
-  ;;    (or (not (re-search-backward
-  ;;              (concat "\\("
-  ;;                      (regexp-quote generate-autoload-section-header)
-  ;;                      "\\)\\|\\("
-  ;;                      (regexp-quote generate-autoload-section-trailer)
-  ;;                      "\\)")
-  ;;              nil t))
-  ;;        (match-end 2))))
   (insert "\f\n;;;### ")
   (prin1 `(autoloads ,autoloads ,load-name ,file ,time)
 	 outbuf)
@@ -484,17 +477,22 @@ if `autoload-timestamps' is non-nil, otherwise a fixed fake time is inserted)."
 	(or (eolp)
 	    (insert "\n" ";;;;;; "))))))
 
-(defun loaddefs-gen--generate (dir output-file &optional excluded-files)
+;;;###autoload
+(defun loaddefs-generate (dir output-file &optional excluded-files
+                              extra-data include-package-version)
   "Generate loaddefs files for Lisp files in the directories DIRS.
-DIR can be either a single directory or a list of
-directories.
+DIR can be either a single directory or a list of directories.
 
 The autoloads will be written to OUTPUT-FILE.  If any Lisp file
 binds `generated-autoload-file' as a file-local variable, write
 its autoloads into the specified file instead.
 
 The function does NOT recursively descend into subdirectories of the
-directory or directories specified."
+directory or directories specified.
+
+If EXTRA-DATA, include this string at the start of the generated file.
+
+If INCLUDE-PACKAGE-VERSION, include package version data."
   (let* ((files-re (let ((tmp nil))
 		     (dolist (suf (get-load-suffixes))
                        ;; We don't use module-file-suffix below because
@@ -514,7 +512,7 @@ directory or directories specified."
     ;; Collect all the autoload data.
     (let ((progress (make-progress-reporter
                      (byte-compile-info
-                      (concat "Scraping files for autoloads"))
+                      (concat "Scraping files for loaddefs"))
                      0 (length files) nil 10))
           (file-count 0))
       (dolist (file files)
@@ -523,7 +521,12 @@ directory or directories specified."
         (setq defs (nconc
 		    (loaddefs-gen--parse-file
                      file output-file
-                     (member (expand-file-name file) excluded-files))
+                     ;; We only want the package name from the
+                     ;; excluded files.
+                     (and include-package-version
+                          (if (member (expand-file-name file) excluded-files)
+                              'only
+                            t)))
                     defs)))
       (progress-reporter-done progress))
 
@@ -532,6 +535,9 @@ directory or directories specified."
       (with-temp-buffer
         (insert (loaddefs-gen--rubric (car fdefs) nil t))
         (search-backward "\f")
+        (when extra-data
+          (insert extra-data)
+          (ensure-empty-lines 1))
         ;; The group by source file (and sort alphabetically).
         (dolist (section (sort (seq-group-by #'cadr (cdr fdefs))
                                (lambda (e1 e2)
@@ -544,7 +550,7 @@ directory or directories specified."
           (let ((relfile (file-relative-name
                           (cadar section)
                           (file-name-directory (car fdefs)))))
-            (insert "\f\n;;; Generated autoloads from " relfile "\n")
+            (insert "\f\n;;; Generated autoloads from " relfile "\n\n")
             (dolist (def (reverse section))
               (setq def (caddr def))
               (if (stringp def)
@@ -604,15 +610,22 @@ directory or directories specified."
 
 ;;;###autoload
 (defun loaddefs-gen-batch ()
-  "Generate lisp/loaddefs.el autoloads in batch mode.
+  "Generate loaddefs.el files in batch mode.
+This scans for ;;;###autoload forms and related things.
+
 The first element on the command line should be the (main)
-loaddefs.el file, and the rest are the directories to use."
-  ;; For use during the Emacs build process only.
-  (let ((args command-line-args-left))
+loaddefs.el output file, and the rest are the directories to
+use."
+  (let* ((args command-line-args-left)
+         (output-file (expand-file-name (car args) lisp-directory)))
     (setq command-line-args-left nil)
-    (loaddefs-gen--generate
-     (cdr args) (expand-file-name (car args) lisp-directory)
-     (loaddefs-gen--excluded-files))))
+    (loaddefs-generate
+     (cdr args) output-file
+     (loaddefs-gen--excluded-files)
+     nil
+     ;; When generating the top-level Emacs loaddefs file, we want to
+     ;; include the `package--builtin-versions' things.
+     (equal (file-name-directory output-file) lisp-directory))))
 
 (provide 'loaddefs-gen)
 

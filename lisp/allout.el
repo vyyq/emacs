@@ -489,6 +489,7 @@ calls."
   :type 'boolean :group 'allout)
 
 ;;;_  = allout-header-prefix
+;;;###autoload
 (defcustom allout-header-prefix "."
 ;; this string is treated as literal match.  it will be `regexp-quote'd, so
 ;; one cannot use regular expressions to match varying header prefixes.

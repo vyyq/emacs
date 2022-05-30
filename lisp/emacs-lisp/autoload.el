@@ -28,6 +28,9 @@
 ;; Lisp source files in various useful ways.  To learn more, read the
 ;; source; if you're going to use this, you'd better be able to.
 
+;; The functions in this file have been largely superseded by
+;; loaddefs-gen.el.
+
 ;;; Code:
 
 (require 'lisp-mode)			;for `doc-string-elt' properties.
