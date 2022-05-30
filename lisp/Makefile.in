@@ -179,17 +179,13 @@ $(lisp)/finder-inf.el:
 # We make $(lisp)/loaddefs.el a dependency of .PHONY to cause Make to
 # ignore its time stamp.  That's because the real dependencies of
 # loaddefs.el aren't known to Make, they are implemented in
-# batch-update-autoloads, which only updates the autoloads whose
-# sources have changed.
-
-# Use expand-file-name rather than $abs_scrdir so that Emacs does not
-# get confused when it compares file-names for equality.
+# loaddefs-gen-batch.
 
 autoloads .PHONY: $(lisp)/loaddefs.el
 $(lisp)/loaddefs.el: gen-lisp $(LOADDEFS)
 	$(AM_V_GEN)$(emacs) -l autoload \
             -l $(lisp)/emacs-lisp/loaddefs-gen.elc \
-	    -f batch-loaddefs-gen ${SUBDIRS_ALMOST}
+	    -f loaddefs-gen-batch $(lisp)/loaddefs.el ${SUBDIRS_ALMOST}
 
 # autoloads only runs when loaddefs.el is nonexistent, although it
 # generates a number of different files. Provide a force option to enable

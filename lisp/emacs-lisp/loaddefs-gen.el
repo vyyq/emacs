@@ -544,7 +544,7 @@ directory or directories specified."
           (let ((relfile (file-relative-name
                           (cadar section)
                           (file-name-directory (car fdefs)))))
-            (insert ";;; Generated autoloads from " relfile "\n")
+            (insert "\f\n;;; Generated autoloads from " relfile "\n")
             (dolist (def (reverse section))
               (setq def (caddr def))
               (if (stringp def)
@@ -566,7 +566,8 @@ directory or directories specified."
     ;; The salient point here is that we have to have the doc string
     ;; that starts with a backslash and a newline, and there mustn't
     ;; be any newlines before that.  So -- typically
-    ;; (defvar foo 'value "Doc string" ...).
+    ;; (defvar foo 'value "\
+    ;; Doc string" ...).
     (insert "(")
     (dotimes (_ 3)
       (prin1 (pop def) (current-buffer)
@@ -602,13 +603,15 @@ directory or directories specified."
     (cons (expand-file-name "ldefs-boot.el") excludes)))
 
 ;;;###autoload
-(defun batch-loaddefs-gen ()
-  "Generate lisp/loaddefs.el autoloads in batch mode."
+(defun loaddefs-gen-batch ()
+  "Generate lisp/loaddefs.el autoloads in batch mode.
+The first element on the command line should be the (main)
+loaddefs.el file, and the rest are the directories to use."
   ;; For use during the Emacs build process only.
   (let ((args command-line-args-left))
     (setq command-line-args-left nil)
     (loaddefs-gen--generate
-     args (expand-file-name "loaddefs.el" lisp-directory)
+     (cdr args) (expand-file-name (car args) lisp-directory)
      (loaddefs-gen--excluded-files))))
 
 (provide 'loaddefs-gen)
