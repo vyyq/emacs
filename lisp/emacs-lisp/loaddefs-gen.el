@@ -26,7 +26,7 @@
 ;; all the other loaddefs files, like calendar/diary-loaddefs.el, etc.
 
 ;; The main entry point is `loaddefs-generate' (normally called
-;; from loaddefs-gen-batch via lisp/Makefile).
+;; from loaddefs-generate-batch via lisp/Makefile).
 ;;
 ;; The "other" loaddefs files are specified either via a file-local
 ;; setting of `generated-autoload-file', or by specifying
@@ -64,7 +64,7 @@ be included.")
 More specifically those definitions will not be considered for the
 `register-definition-prefixes' call.")
 
-(defun loaddefs-gen--file-load-name (file outfile)
+(defun loaddefs-generate--file-load-name (file outfile)
   "Compute the name that will be used to load FILE.
 OUTFILE should be the name of the global loaddefs.el file, which
 is expected to be at the root directory of the files we are
@@ -91,7 +91,7 @@ scanning for autoloads and will be in the `load-path'."
         (substring name 0 (match-beginning 0))
       name)))
 
-(defun loaddefs-gen--make-autoload (form file &optional expansion)
+(defun loaddefs-generate--make-autoload (form file &optional expansion)
   "Turn FORM into an autoload or defvar for source file FILE.
 Returns nil if FORM is not a special autoload form (i.e. a function definition
 or macro definition or a defcustom).
@@ -138,7 +138,7 @@ expression, in which case we want to handle forms differently."
           (setq form (copy-sequence form))
           (setcdr (memq :autoload-end form) nil))
         (let ((exps (delq nil (mapcar (lambda (form)
-                                        (loaddefs-gen--make-autoload
+                                        (loaddefs-generate--make-autoload
                                          form file expansion))
                                       (cdr form)))))
           (when exps (cons 'progn exps)))))
@@ -155,7 +155,7 @@ expression, in which case we want to handle forms differently."
                           (macroexpand form)))
 	   (memq (car expand) '(progn prog1 defalias)))
       ;; Recurse on the expansion.
-      (loaddefs-gen--make-autoload expand file 'expansion))
+      (loaddefs-generate--make-autoload expand file 'expansion))
 
      ;; For special function-like operators, use the `autoload' function.
      ((memq car '(define-skeleton define-derived-mode
@@ -253,7 +253,7 @@ expression, in which case we want to handle forms differently."
      ;; nil here indicates that this is not a special autoload form.
      (t nil))))
 
-(defun loaddefs-gen--make-prefixes (defs file)
+(defun loaddefs-generate--make-prefixes (defs file)
   ;; Remove the defs that obey the rule that file foo.el (or
   ;; foo-mode.el) uses "foo-" as prefix.  Then compute a small set of
   ;; prefixes that cover all the remaining definitions.
@@ -302,8 +302,7 @@ expression, in which case we want to handle forms differently."
         `(register-definition-prefixes ,file ',(sort (delq nil strings)
 						     'string<))))))
 
-
-(defun loaddefs-gen--parse-file (file main-outfile &optional package-data)
+(defun loaddefs-generate--parse-file (file main-outfile &optional package-data)
   "Examing FILE for ;;;###autoload statements.
 MAIN-OUTFILE is the main loaddefs file these statements are
 destined for, but this can be overriden by the buffer-local
@@ -314,7 +313,7 @@ If PACKAGE-DATA is `only', return only the package data.  If t,
 include the package data with the rest of the data.  Otherwise,
 don't include."
   (let ((defs nil)
-        (load-name (loaddefs-gen--file-load-name file main-outfile))
+        (load-name (loaddefs-generate--file-load-name file main-outfile))
         (compute-prefixes t)
         local-outfile inhibit-autoloads)
     (with-temp-buffer
@@ -373,7 +372,8 @@ don't include."
                                  (read (current-buffer))
                                (unless (bolp)
                                  (forward-line 1))))
-                       (autoload (or (loaddefs-gen--make-autoload form load-name)
+                       (autoload (or (loaddefs-generate--make-autoload
+                                      form load-name)
                                      form)))
                   ;; We get back either an autoload form, or a tree
                   ;; structure of `(progn ...)' things, so unravel that.
@@ -398,13 +398,13 @@ don't include."
 
         (when (and autoload-compute-prefixes
                    compute-prefixes)
-          (when-let ((form (loaddefs-gen--compute-prefixes load-name)))
+          (when-let ((form (loaddefs-generate--compute-prefixes load-name)))
             ;; This output needs to always go in the main loaddefs.el,
             ;; regardless of `generated-autoload-file'.
             (push (list main-outfile file form) defs)))))
     defs))
 
-(defun loaddefs-gen--compute-prefixes (load-name)
+(defun loaddefs-generate--compute-prefixes (load-name)
   (goto-char (point-min))
   (let ((prefs nil))
     ;; Avoid (defvar <foo>) by requiring a trailing space.
@@ -419,9 +419,9 @@ don't include."
                         (forward-line -1)
                         (not (looking-at ";;;###autoload")))))
             (push name prefs)))))
-    (loaddefs-gen--make-prefixes prefs load-name)))
+    (loaddefs-generate--make-prefixes prefs load-name)))
 
-(defun loaddefs-gen--rubric (file &optional type feature)
+(defun loaddefs-generate--rubric (file &optional type feature)
   "Return a string giving the appropriate autoload rubric for FILE.
 TYPE (default \"autoloads\") is a string stating the type of
 information contained in FILE.  TYPE \"package\" acts like the default,
@@ -457,7 +457,8 @@ FILE's name."
 	    ";;; " basename
 	    " ends here\n")))
 
-(defun loaddefs-gen--insert-section-header (outbuf autoloads load-name file time)
+(defun loaddefs-generate--insert-section-header (outbuf autoloads
+                                                        load-name file time)
   "Insert into buffer OUTBUF the section-header line for FILE.
 The header line lists the file name, its \"load name\", its autoloads,
 and the time the FILE was last updated (the time is inserted only
@@ -519,7 +520,7 @@ If INCLUDE-PACKAGE-VERSION, include package version data."
         (progress-reporter-update progress (setq file-count (1+ file-count)))
         ;; Do not insert autoload entries for excluded files.
         (setq defs (nconc
-		    (loaddefs-gen--parse-file
+		    (loaddefs-generate--parse-file
                      file output-file
                      ;; We only want the package name from the
                      ;; excluded files.
@@ -533,7 +534,7 @@ If INCLUDE-PACKAGE-VERSION, include package version data."
     ;; Generate the loaddef files.  First group per output file.
     (dolist (fdefs (seq-group-by #'car defs))
       (with-temp-buffer
-        (insert (loaddefs-gen--rubric (car fdefs) nil t))
+        (insert (loaddefs-generate--rubric (car fdefs) nil t))
         (search-backward "\f")
         (when extra-data
           (insert extra-data)
@@ -555,7 +556,7 @@ If INCLUDE-PACKAGE-VERSION, include package version data."
               (setq def (caddr def))
               (if (stringp def)
                   (princ def (current-buffer))
-                (loaddefs-gen--print-form def))
+                (loaddefs-generate--print-form def))
               (unless (bolp)
                 (insert "\n")))
             (insert "\n")))
@@ -563,7 +564,7 @@ If INCLUDE-PACKAGE-VERSION, include package version data."
         (byte-compile-info (file-relative-name (car fdefs) lisp-directory)
                            t "GEN")))))
 
-(defun loaddefs-gen--print-form (def)
+(defun loaddefs-generate--print-form (def)
   "Print DEF in the way make-docfile.c expects it."
   (if (or (not (consp def))
           (not (symbolp (car def)))
@@ -590,7 +591,7 @@ If INCLUDE-PACKAGE-VERSION, include package version data."
       (prin1 (pop def) (current-buffer) t))
     (insert ")")))
 
-(defun loaddefs-gen--excluded-files ()
+(defun loaddefs-generate--excluded-files ()
   ;; Exclude those files that are preloaded on ALL platforms.
   ;; These are the ones in loadup.el where "(load" is at the start
   ;; of the line (crude, but it works).
@@ -609,7 +610,7 @@ If INCLUDE-PACKAGE-VERSION, include package version data."
     (cons (expand-file-name "ldefs-boot.el") excludes)))
 
 ;;;###autoload
-(defun loaddefs-gen-batch ()
+(defun loaddefs-generate-batch ()
   "Generate loaddefs.el files in batch mode.
 This scans for ;;;###autoload forms and related things.
 
@@ -621,7 +622,7 @@ use."
     (setq command-line-args-left nil)
     (loaddefs-generate
      (cdr args) output-file
-     (loaddefs-gen--excluded-files)
+     (loaddefs-generate--excluded-files)
      nil
      ;; When generating the top-level Emacs loaddefs file, we want to
      ;; include the `package--builtin-versions' things.

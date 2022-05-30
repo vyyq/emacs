@@ -319,7 +319,7 @@ Lays claim to all .elc files that match .el files in this target."
 		("require" . "$(foreach r,$(1),(require (quote $(r))))"))
    :commands
    '("$(EMACS) $(EMACSFLAGS) $(addprefix -L ,$(LOADPATH)) \
--f loaddefs-gen-batch $(abspath $(LOADDEFS)) $(abspath $(LOADDIRS))")
+-f loaddefs-generate-batch $(abspath $(LOADDEFS)) $(abspath $(LOADDIRS))")
    :rules (list (ede-makefile-rule :target "clean-autoloads" :phony t :rules '("rm -f $(LOADDEFS)")))
    :sourcetype '(ede-source-emacs)
    )

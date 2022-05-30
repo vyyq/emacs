@@ -116,7 +116,7 @@ then we use the timestamp of the output file instead.  As a result:
 
 (defvar autoload-modified-buffers)      ;Dynamically scoped var.
 
-(defalias 'make-autoload #'loaddefs-gen--make-autoload)
+(defalias 'make-autoload #'loaddefs-generate--make-autoload)
 
 ;; Forms which have doc-strings which should be printed specially.
 ;; A doc-string-elt property of ELT says that (nth ELT FORM) is
@@ -225,7 +225,7 @@ put the output in."
 	      (print-escape-nonascii t))
 	  (print form outbuf)))))))
 
-(defalias 'autoload-rubric #'loaddefs-gen--rubric)
+(defalias 'autoload-rubric #'loaddefs-generate--rubric)
 
 (defvar autoload-ensure-writable nil
   "Non-nil means `autoload-find-generated-file' makes existing file writable.")
@@ -292,12 +292,13 @@ if `autoload-timestamps' is non-nil, otherwise a fixed fake time is inserted)."
       (hack-local-variables))
     (current-buffer)))
 
-(defalias 'autoload-insert-section-header #'loaddefs-gen--insert-section-header)
+(defalias 'autoload-insert-section-header
+  #'loaddefs-generate--insert-section-header)
 
 (defvar no-update-autoloads nil
   "File local variable to prevent scanning this file for autoload cookies.")
 
-(defalias 'autoload-file-load-name #'loaddefs-gen--file-load-name)
+(defalias 'autoload-file-load-name #'loaddefs-generate--file-load-name)
 
 (defun generate-file-autoloads (file)
   "Insert at point a loaddefs autoload section for FILE.
@@ -322,7 +323,7 @@ cost more memory use).")
   "Target size of definition prefixes.
 Don't try to split prefixes that are already longer than that.")
 
-(defalias 'autoload--make-defs-autoload #'loaddefs-gen--make-prefixes)
+(defalias 'autoload--make-defs-autoload #'loaddefs-generate--make-prefixes)
 
 (defun autoload--setup-output (otherbuf outbuf absfile load-name output-file)
   (let ((outbuf
