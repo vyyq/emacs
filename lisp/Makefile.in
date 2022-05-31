@@ -184,6 +184,7 @@ $(lisp)/finder-inf.el:
 autoloads .PHONY: $(lisp)/loaddefs.el
 $(lisp)/loaddefs.el: gen-lisp $(LOADDEFS)
 	$(AM_V_GEN)$(emacs) \
+            -l $(lisp)/emacs-lisp/loaddefs-gen.elc \
 	    -f loaddefs-generate-batch $(lisp)/loaddefs.el ${SUBDIRS_ALMOST}
 
 # autoloads only runs when loaddefs.el is nonexistent, although it
