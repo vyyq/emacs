@@ -203,9 +203,10 @@ Dialog resource directories are located by expanding the variable
 ;; but they sometimes experience complications when an earlier test
 ;; has failed.
 (defun erc-scenarios-common-say (str)
-  (goto-char erc-input-marker)
-  (insert str)
-  (erc-send-current-line))
+  (let (erc-accidental-paste-threshold-seconds)
+    (goto-char erc-input-marker)
+    (insert str)
+    (erc-send-current-line)))
 
 
 ;;;; Fixtures

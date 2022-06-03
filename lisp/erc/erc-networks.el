@@ -776,13 +776,14 @@ set of connection parameters.  See the constructor
                (:constructor erc-networks--id-fixed-create
                              (given &aux (ts (float-time)) (symbol given)))))
 
-(cl-defstruct (erc-networks--id-eliding
+(cl-defstruct (erc-networks--id-qualifying
                (:include erc-networks--id)
-               (:constructor erc-networks--id-eliding-create
+               (:constructor erc-networks--id-qualifying-create
                              (&aux
                               (ts (float-time))
-                              (parts (erc-networks--id-eliding-init-parts))
-                              (symbol (erc-networks--id-eliding-init-id parts))
+                              (parts (erc-networks--id-qualifying-init-parts))
+                              (symbol (erc-networks--id-qualifying-init-symbol
+                                       parts))
                               (len 1))))
   "A session context composed of hierarchical connection parameters.
 Two identifiers are considered equivalent when their non-empty `parts'
@@ -824,7 +825,7 @@ This may have originated from an `:id' arg to entry-point commands
 
 ;; Otherwise, use an adaptive name derived from network params.
 (cl-defmethod erc-networks--id-create ((_ null))
-  (erc-networks--id-eliding-create))
+  (erc-networks--id-qualifying-create))
 
 ;; But honor an explicitly set `erc-rename-buffers' (compat).
 (cl-defmethod erc-networks--id-create
@@ -847,8 +848,8 @@ This is typically during or just after MOTD.")
 (cl-defmethod erc-networks--id-on-connect ((_ erc-networks--id))
   nil)
 
-(cl-defmethod erc-networks--id-on-connect ((id erc-networks--id-eliding))
-  (erc-networks--id-eliding-update id (erc-networks--id-eliding-create)))
+(cl-defmethod erc-networks--id-on-connect ((id erc-networks--id-qualifying))
+  (erc-networks--id-qualifying-update id (erc-networks--id-qualifying-create)))
 
 (cl-defgeneric erc-networks--id-equal-p (self other)
   "Return non-nil when two network identities exhibit underlying equality.
@@ -864,29 +865,29 @@ identities should be `equal' (timestamps aside) that aren't also `eq'.")
                                         (b erc-networks--id-fixed))
   (or (eq a b) (eq (erc-networks--id-symbol a) (erc-networks--id-symbol b))))
 
-(cl-defmethod erc-networks--id-equal-p ((a erc-networks--id-eliding)
-                                        (b erc-networks--id-eliding))
-  (or (eq a b) (equal (erc-networks--id-eliding-parts a)
-                      (erc-networks--id-eliding-parts b))))
+(cl-defmethod erc-networks--id-equal-p ((a erc-networks--id-qualifying)
+                                        (b erc-networks--id-qualifying))
+  (or (eq a b) (equal (erc-networks--id-qualifying-parts a)
+                      (erc-networks--id-qualifying-parts b))))
 
 ;; ERASE-ME: if some future extension were to come along offering
 ;; additional members, e.g., [Libera.Chat "bob" laptop], it'd likely
 ;; be cleaner to create a new struct type descending from
-;; `erc-networks--id-eliding' than to convert this function into a
+;; `erc-networks--id-qualifying' than to convert this function into a
 ;; generic.  However, the latter would be simpler because it'd just
 ;; require something like &context (erc-v3-device erc-v3--device-t).
 
-(defun erc-networks--id-eliding-init-parts ()
+(defun erc-networks--id-qualifying-init-parts ()
   "Return opaque list of atoms to serve as canonical identifier."
   (when-let ((network (erc-network))
              (nick (erc-current-nick)))
     (vector network (erc-downcase nick))))
 
 (defvar erc-networks--id-sep "/"
-  "Separator for joining `erc-networks--id-eliding-parts' into a net ID.")
+  "Separator for joining `erc-networks--id-qualifying-parts' into a net ID.")
 
-(defun erc-networks--id-eliding-init-id (elts &optional len)
-  "Create and return symbol to represent presence identified by ELTS.
+(defun erc-networks--id-qualifying-init-symbol (elts &optional len)
+  "Return symbol appropriate for network context identified by ELTS.
 Use leading interval of length LEN as contributing components.  Combine
 them with string separator `erc-networks--id-sep'."
   (when elts
@@ -896,27 +897,27 @@ them with string separator `erc-networks--id-sep'."
                        (seq-subseq elts 0 len)
                        erc-networks--id-sep))))
 
-(defun erc-networks--id-eliding-grow-id (nid)
+(defun erc-networks--id-qualifying-grow-id (nid)
   "Grow NID by one component or return nil when at capacity."
-  (unless (= (length (erc-networks--id-eliding-parts nid))
-             (erc-networks--id-eliding-len nid))
+  (unless (= (length (erc-networks--id-qualifying-parts nid))
+             (erc-networks--id-qualifying-len nid))
     (setf (erc-networks--id-symbol nid)
-          (erc-networks--id-eliding-init-id
-           (erc-networks--id-eliding-parts nid)
-           (cl-incf (erc-networks--id-eliding-len nid))))))
+          (erc-networks--id-qualifying-init-symbol
+           (erc-networks--id-qualifying-parts nid)
+           (cl-incf (erc-networks--id-qualifying-len nid))))))
 
-(defun erc-networks--id-eliding-reset-id (nid)
+(defun erc-networks--id-qualifying-reset-id (nid)
   "Restore NID to its initial state."
-  (setf (erc-networks--id-eliding-len nid) 1
+  (setf (erc-networks--id-qualifying-len nid) 1
         (erc-networks--id-symbol nid)
-        (erc-networks--id-eliding-init-id
-         (erc-networks--id-eliding-parts nid))))
+        (erc-networks--id-qualifying-init-symbol
+         (erc-networks--id-qualifying-parts nid))))
 
-(defun erc-networks--id-eliding-prefix-length (nid-a nid-b)
+(defun erc-networks--id-qualifying-prefix-length (nid-a nid-b)
   "Return length of common initial prefix of NID-A and NID-B.
 Return nil when no such sequence exists (instead of zero)."
-  (when-let* ((a (erc-networks--id-eliding-parts nid-a))
-              (b (erc-networks--id-eliding-parts nid-b))
+  (when-let* ((a (erc-networks--id-qualifying-parts nid-a))
+              (b (erc-networks--id-qualifying-parts nid-b))
               (n (min (length a) (length b)))
               ((> n 0))
               ((equal (elt a 0) (elt b 0)))
@@ -927,20 +928,20 @@ Return nil when no such sequence exists (instead of zero)."
       (cl-incf i))
     i))
 
-(defun erc-networks--id-eliding-update (dest source &rest overrides)
+(defun erc-networks--id-qualifying-update (dest source &rest overrides)
   "Update DEST from SOURCE in place.
 Copy slots into DEST from SOURCE and recompute ID.  Both SOURCE and DEST
 must be `erc-networks--id' objects.  OVERRIDES is an optional plist of SLOT VAL
 pairs."
-  (setf (erc-networks--id-eliding-parts dest)
-        (or (plist-get overrides :parts) (erc-networks--id-eliding-parts source))
-        (erc-networks--id-eliding-len dest)
-        (or (plist-get overrides :len) (erc-networks--id-eliding-len source))
+  (setf (erc-networks--id-qualifying-parts dest)
+        (or (plist-get overrides :parts) (erc-networks--id-qualifying-parts source))
+        (erc-networks--id-qualifying-len dest)
+        (or (plist-get overrides :len) (erc-networks--id-qualifying-len source))
         (erc-networks--id-symbol dest)
         (or (plist-get overrides :symbol)
-            (erc-networks--id-eliding-init-id
-             (erc-networks--id-eliding-parts dest)
-             (erc-networks--id-eliding-len dest)))))
+            (erc-networks--id-qualifying-init-symbol
+             (erc-networks--id-qualifying-parts dest)
+             (erc-networks--id-qualifying-len dest)))))
 
 (cl-defgeneric erc-networks--id-reload (_nid &optional _proc _parsed)
   "Handle an update to the current network identity.
@@ -948,11 +949,11 @@ If provided, PROC should be the current `erc-server-process' and PARSED
 the current `erc-response'.  NID is an `erc-networks--id' object."
   nil)
 
-(cl-defmethod erc-networks--id-reload ((nid erc-networks--id-eliding)
+(cl-defmethod erc-networks--id-reload ((nid erc-networks--id-qualifying)
                                        &optional proc parsed)
-  "Refresh identity after an `erc-networks--id-eliding-parts' update."
-  (erc-networks--id-eliding-update nid (erc-networks--id-eliding-create)
-                                   :len (erc-networks--id-eliding-len nid))
+  "Refresh identity after an `erc-networks--id-qualifying-parts' update."
+  (erc-networks--id-qualifying-update nid (erc-networks--id-qualifying-create)
+                                      :len (erc-networks--id-qualifying-len nid))
   (erc-networks--rename-server-buffer (or proc erc-server-process) parsed)
   (erc-networks--shrink-ids-and-buffer-names-any)
   (erc-with-all-buffers-of-server
@@ -970,16 +971,16 @@ the current `erc-response'.  NID is an `erc-networks--id' object."
   nil)
 
 (cl-defmethod erc-networks--id-ensure-comparable
-  ((nid erc-networks--id-eliding) (other erc-networks--id-eliding))
+  ((nid erc-networks--id-qualifying) (other erc-networks--id-qualifying))
   "Grow NID along with that of the current buffer.
 Rename the current buffer if its NID has grown."
-  (when-let ((n (erc-networks--id-eliding-prefix-length other nid)))
-    (while (and (<= (erc-networks--id-eliding-len nid) n)
-                (erc-networks--id-eliding-grow-id nid)))
+  (when-let ((n (erc-networks--id-qualifying-prefix-length other nid)))
+    (while (and (<= (erc-networks--id-qualifying-len nid) n)
+                (erc-networks--id-qualifying-grow-id nid)))
     ;; Grow and rename a visited buffer and all its targets
-    (when (and (> (erc-networks--id-eliding-len nid)
-                  (erc-networks--id-eliding-len other))
-               (erc-networks--id-eliding-grow-id other))
+    (when (and (> (erc-networks--id-qualifying-len nid)
+                  (erc-networks--id-qualifying-len other))
+               (erc-networks--id-qualifying-grow-id other))
       ;; Rename NID's buffers using current ID
       (erc-buffer-filter (lambda ()
                            (when (eq erc-networks--id other)
@@ -1006,9 +1007,9 @@ when determining collisions."
         #'ignore
         (lambda ()
           (unless (or (not omit) (eq (current-buffer) omit))
-            (erc-networks--ensure-qual-target-buffer-name)
+            (erc-networks--ensure-unique-target-buffer-name)
             t)))
-      (erc-networks--ensure-qual-target-buffer-name)
+      (erc-networks--ensure-unique-target-buffer-name)
     (rename-buffer (erc--target-string erc--target) 'unique)))
 
 ;; This currently doesn't equalize related identities that may have
@@ -1021,10 +1022,10 @@ when determining collisions."
     (erc-buffer-filter
      (lambda ()
        (when (and erc-networks--id
-                  (erc-networks--id-eliding-p erc-networks--id)
+                  (erc-networks--id-qualifying-p erc-networks--id)
                   (not (memq (current-buffer) omit))
                   (not (memq erc-networks--id grown))
-                  (> (erc-networks--id-eliding-len erc-networks--id) 1))
+                  (> (erc-networks--id-qualifying-len erc-networks--id) 1))
          (push erc-networks--id grown))))
     ;; Check for other identities with shared prefix.  If none exists,
     ;; and an identity is overlong, shrink it.
@@ -1034,10 +1035,10 @@ when determining collisions."
           (dolist (other grown)
             (unless (eq nid other)
               (setq skip nil)
-              (when (erc-networks--id-eliding-prefix-length nid other)
+              (when (erc-networks--id-qualifying-prefix-length nid other)
                 (throw 'found (setq skip t))))))
-        (unless (or skip (< (erc-networks--id-eliding-len nid) 2))
-          (erc-networks--id-eliding-reset-id nid)
+        (unless (or skip (< (erc-networks--id-qualifying-len nid) 2))
+          (erc-networks--id-qualifying-reset-id nid)
           (erc-buffer-filter
            (lambda ()
              (when (and (eq erc-networks--id nid)
@@ -1047,7 +1048,7 @@ when determining collisions."
                  (erc-networks--maybe-update-buffer-name))))))))))
 
 (cl-defmethod erc-networks--shrink-ids-and-buffer-names
-  (&context (erc-networks--id erc-networks--id-eliding))
+  (&context (erc-networks--id erc-networks--id-qualifying))
   (erc-networks--shrink-ids-and-buffer-names-any (current-buffer)))
 
 (defun erc-networks-rename-surviving-target-buffer ()
@@ -1114,13 +1115,13 @@ object."
            ((erc--target-channel-local-p target) erc-server-announced-name)
            (t (symbol-name (erc-networks--id-symbol erc-networks--id))))))
 
-(defun erc-networks--ensure-qual-target-buffer-name ()
+(defun erc-networks--ensure-unique-target-buffer-name ()
   (when-let* ((new-name (erc-networks--construct-target-buffer-name
                          erc--target))
               ((not (equal (buffer-name) new-name))))
     (rename-buffer new-name 'unique)))
 
-(defun erc-networks--ensure-qual-server-buffer-name ()
+(defun erc-networks--ensure-unique-server-buffer-name ()
   (when-let* ((new-name (symbol-name (erc-networks--id-symbol
                                       erc-networks--id)))
               ((not (equal (buffer-name) new-name))))
@@ -1129,8 +1130,8 @@ object."
 (defun erc-networks--maybe-update-buffer-name ()
   "Update current buffer name to reflect display ID if necessary."
   (if erc--target
-      (erc-networks--ensure-qual-target-buffer-name)
-    (erc-networks--ensure-qual-server-buffer-name)))
+      (erc-networks--ensure-unique-target-buffer-name)
+    (erc-networks--ensure-unique-server-buffer-name)))
 
 (defun erc-networks--reconcile-buffer-names (target nid)
   "Reserve preferred buffer name for TARGET and network identifier.
@@ -1151,7 +1152,7 @@ suffixes going from newest to oldest."
                         (unless (erc--target-channel-local-p erc--target)
                           (erc-networks--id-ensure-comparable
                            nid erc-networks--id))
-                        (erc-networks--ensure-qual-target-buffer-name)
+                        (erc-networks--ensure-unique-target-buffer-name)
                         t)))
          ;; Must follow ^ because NID may have been modified
          (name (if (or namesakes (not (with-suppressed-warnings
@@ -1308,7 +1309,7 @@ ANNOUNCED is the server's reported host name."
                                               erc-insert-marker)))
                (kill-buffer) ; allow target-buf renaming hook to run
                (with-current-buffer existing
-                 (erc-networks--ensure-qual-target-buffer-name)
+                 (erc-networks--ensure-unique-target-buffer-name)
                  (erc-networks--insert-transplanted-content content))))
          (setq erc-server-process new-proc
                erc-server-connected t

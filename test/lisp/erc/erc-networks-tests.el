@@ -60,14 +60,15 @@
            (erc-server-current-nick "Joe")
            (identity (erc-networks--id-create nil)))
 
-      (should (equal identity #s(erc-networks--id-eliding 0.0 FooNet
-                                                          [FooNet "joe"] 1)))
-      (should (equal (erc-networks--id-eliding-grow-id identity) 'FooNet/joe))
-      (should (equal identity #s(erc-networks--id-eliding 0.0 FooNet/joe
-                                                          [FooNet "joe"] 2)))
-      (should-not (erc-networks--id-eliding-grow-id identity))
-      (should (equal identity #s(erc-networks--id-eliding 0.0 FooNet/joe
-                                                          [FooNet "joe"] 2))))
+      (should (equal identity #s(erc-networks--id-qualifying
+                                 0.0 FooNet [FooNet "joe"] 1)))
+      (should (equal (erc-networks--id-qualifying-grow-id identity)
+                     'FooNet/joe))
+      (should (equal identity #s(erc-networks--id-qualifying
+                                 0.0 FooNet/joe [FooNet "joe"] 2)))
+      (should-not (erc-networks--id-qualifying-grow-id identity))
+      (should (equal identity #s(erc-networks--id-qualifying
+                                 0.0 FooNet/joe [FooNet "joe"] 2))))
 
     ;; Compat
     (with-current-buffer (get-buffer-create "fake.chat")
@@ -104,30 +105,30 @@
             (should (equal (erc-networks--id-create 'bar) expected)))))
       (kill-buffer))))
 
-(ert-deftest erc-networks--id-eliding-prefix-length ()
-  (should-not (erc-networks--id-eliding-prefix-length
-               (make-erc-networks--id-eliding)
-               (make-erc-networks--id-eliding)))
+(ert-deftest erc-networks--id-qualifying-prefix-length ()
+  (should-not (erc-networks--id-qualifying-prefix-length
+               (make-erc-networks--id-qualifying)
+               (make-erc-networks--id-qualifying)))
 
-  (should-not (erc-networks--id-eliding-prefix-length
-               (make-erc-networks--id-eliding :parts [1 2])
-               (make-erc-networks--id-eliding :parts [2 3])))
+  (should-not (erc-networks--id-qualifying-prefix-length
+               (make-erc-networks--id-qualifying :parts [1 2])
+               (make-erc-networks--id-qualifying :parts [2 3])))
 
-  (should (= 1 (erc-networks--id-eliding-prefix-length
-                (make-erc-networks--id-eliding :parts [1])
-                (make-erc-networks--id-eliding :parts [1 2]))))
+  (should (= 1 (erc-networks--id-qualifying-prefix-length
+                (make-erc-networks--id-qualifying :parts [1])
+                (make-erc-networks--id-qualifying :parts [1 2]))))
 
-  (should (= 1 (erc-networks--id-eliding-prefix-length
-                (make-erc-networks--id-eliding :parts [1 2])
-                (make-erc-networks--id-eliding :parts [1 3]))))
+  (should (= 1 (erc-networks--id-qualifying-prefix-length
+                (make-erc-networks--id-qualifying :parts [1 2])
+                (make-erc-networks--id-qualifying :parts [1 3]))))
 
-  (should (= 2 (erc-networks--id-eliding-prefix-length
-                (make-erc-networks--id-eliding :parts [1 2])
-                (make-erc-networks--id-eliding :parts [1 2]))))
+  (should (= 2 (erc-networks--id-qualifying-prefix-length
+                (make-erc-networks--id-qualifying :parts [1 2])
+                (make-erc-networks--id-qualifying :parts [1 2]))))
 
-  (should (= 1 (erc-networks--id-eliding-prefix-length
-                (make-erc-networks--id-eliding :parts ["1"])
-                (make-erc-networks--id-eliding :parts ["1"])))))
+  (should (= 1 (erc-networks--id-qualifying-prefix-length
+                (make-erc-networks--id-qualifying :parts ["1"])
+                (make-erc-networks--id-qualifying :parts ["1"])))))
 
 (ert-deftest erc-networks--id-sort-buffers ()
   (let (oldest middle newest)
@@ -156,13 +157,13 @@
 
     (with-current-buffer chan-foonet-buffer
       (erc-mode)
-      (setq erc-networks--id (make-erc-networks--id-eliding
+      (setq erc-networks--id (make-erc-networks--id-qualifying
                               :parts [foonet "bob"] :len 1)
             erc--target (erc--target-from-string "#chan")))
 
     (with-current-buffer (get-buffer-create "#chan@barnet")
       (erc-mode)
-      (setq erc-networks--id (make-erc-networks--id-eliding
+      (setq erc-networks--id (make-erc-networks--id-qualifying
                               :parts [barnet "bob"] :len 1)
             erc--target (erc--target-from-string "#chan")))
 
@@ -180,13 +181,13 @@
 
     (with-current-buffer bob-foonet
       (erc-mode)
-      (setq erc-networks--id (make-erc-networks--id-eliding
+      (setq erc-networks--id (make-erc-networks--id-qualifying
                               :parts [foonet "bob"] :len 1)
             erc--target (erc--target-from-string "bob")))
 
     (with-current-buffer (get-buffer-create "bob@barnet")
       (erc-mode)
-      (setq erc-networks--id (make-erc-networks--id-eliding
+      (setq erc-networks--id (make-erc-networks--id-qualifying
                               :parts [barnet "bob"] :len 1)
             erc--target (erc--target-from-string "bob")))
 
@@ -250,7 +251,7 @@
           erc-server-process (erc-networks-tests--create-live-proc)
           ;; Both set just before IRC (logically) connected (post MOTD)
           erc-network 'foonet
-          erc-networks--id (make-erc-networks--id-eliding
+          erc-networks--id (make-erc-networks--id-qualifying
                             :symbol 'foonet/tester
                             :parts [foonet "tester"]
                             :len 2))) ; is/was a plain foonet collision
@@ -277,7 +278,7 @@
     (erc-mode)
     (setq erc-network 'barnet
           erc-server-current-nick "tester"
-          erc-networks--id (make-erc-networks--id-eliding
+          erc-networks--id (make-erc-networks--id-qualifying
                             :symbol 'barnet/tester
                             :parts [barnet "tester"]
                             :len 2)
@@ -287,7 +288,7 @@
     (erc-mode)
     (setq erc-network 'barnet
           erc-server-current-nick "dummy"
-          erc-networks--id (make-erc-networks--id-eliding
+          erc-networks--id (make-erc-networks--id-qualifying
                             :symbol 'barnet/dummy
                             :parts [barnet "dummy"]
                             :len 2)
@@ -307,7 +308,7 @@
           erc--target (erc--target-from-string "#a")))
 
   (with-temp-buffer ; doesn't matter what the current buffer is
-    (setq erc-networks--id (make-erc-networks--id-eliding)) ; mock
+    (setq erc-networks--id (make-erc-networks--id-qualifying)) ; mock
     (erc-networks--shrink-ids-and-buffer-names))
 
   (should (equal (mapcar #'buffer-name (erc-buffer-list))
@@ -330,7 +331,7 @@
     (erc-mode)
     (setq erc-network 'foonet
           erc-server-current-nick "tester"
-          erc-networks--id (make-erc-networks--id-eliding
+          erc-networks--id (make-erc-networks--id-qualifying
                             :symbol 'foonet/tester
                             :parts [foonet "tester"]
                             :len 2)
@@ -351,7 +352,7 @@
     (erc-mode)
     (setq erc-network 'barnet
           erc-server-current-nick "tester"
-          erc-networks--id (make-erc-networks--id-eliding
+          erc-networks--id (make-erc-networks--id-qualifying
                             :symbol 'barnet/tester
                             :parts [barnet "tester"]
                             :len 2)
@@ -369,7 +370,7 @@
           erc--target (erc--target-from-string "#b")))
 
   (with-temp-buffer
-    (setq erc-networks--id (make-erc-networks--id-eliding))
+    (setq erc-networks--id (make-erc-networks--id-qualifying))
     (erc-networks--shrink-ids-and-buffer-names))
 
   (should (equal (mapcar #'buffer-name (erc-buffer-list))
@@ -383,7 +384,7 @@
     (erc-mode)
     (setq erc-network 'foonet
           erc-server-current-nick "tester"
-          erc-networks--id (make-erc-networks--id-eliding
+          erc-networks--id (make-erc-networks--id-qualifying
                             :symbol 'foonet/tester
                             :parts [foonet "tester"]
                             :len 2)
@@ -403,7 +404,7 @@
     (erc-mode)
     (setq erc-network 'barnet
           erc-server-current-nick "tester"
-          erc-networks--id (make-erc-networks--id-eliding
+          erc-networks--id (make-erc-networks--id-qualifying
                             :symbol 'barnet/tester
                             :parts [barnet "tester"]
                             :len 2)
@@ -413,7 +414,7 @@
     (erc-mode)
     (setq erc-network 'barnet
           erc-server-current-nick "dummy"
-          erc-networks--id (make-erc-networks--id-eliding
+          erc-networks--id (make-erc-networks--id-qualifying
                             :symbol 'barnet/dummy
                             :parts [barnet "dummy"]
                             :len 2)
@@ -435,7 +436,7 @@
     (erc-mode)
     (setq erc-network 'foonet
           erc-server-current-nick "dummy"
-          erc-networks--id (make-erc-networks--id-eliding
+          erc-networks--id (make-erc-networks--id-qualifying
                             :symbol 'foonet/dummy
                             :parts [foonet "dummy"]
                             :len 2)
@@ -456,7 +457,7 @@
     (erc-mode)
     (setq erc-network 'foonet
           erc-server-current-nick "dummy"
-          erc-networks--id (make-erc-networks--id-eliding
+          erc-networks--id (make-erc-networks--id-qualifying
                             :symbol 'foonet/dummy
                             :parts [foonet "dummy"]
                             :len 2)
@@ -497,7 +498,7 @@
     (erc-mode)
     (setq erc-network 'foonet
           erc-server-current-nick "tester"
-          erc-networks--id (make-erc-networks--id-eliding
+          erc-networks--id (make-erc-networks--id-qualifying
                             :symbol 'foonet/tester
                             :parts [foonet "tester"]
                             :len 2)
@@ -517,7 +518,7 @@
     (erc-mode)
     (setq erc-network 'barnet
           erc-server-current-nick "tester"
-          erc-networks--id (make-erc-networks--id-eliding
+          erc-networks--id (make-erc-networks--id-qualifying
                             :symbol 'barnet/tester
                             :parts [barnet "tester"]
                             :len 2)
@@ -547,7 +548,7 @@
        (erc-mode)
        (setq erc-network 'foonet
              erc-server-current-nick "dummy"
-             erc-networks--id (make-erc-networks--id-eliding
+             erc-networks--id (make-erc-networks--id-qualifying
                                :symbol 'foonet/dummy
                                :parts [foonet "dummy"]
                                :len 2)
@@ -561,7 +562,7 @@
        (erc-mode)
        (setq erc-network 'foonet
              erc-server-current-nick "dummy"
-             erc-networks--id (make-erc-networks--id-eliding
+             erc-networks--id (make-erc-networks--id-qualifying
                                :symbol 'foonet/dummy
                                :parts [foonet "dummy"]
                                :len 2)
@@ -1057,7 +1058,7 @@
     (erc-mode)
     (setq erc-network 'foonet
           erc-server-current-nick "bob"
-          erc-networks--id (make-erc-networks--id-eliding
+          erc-networks--id (make-erc-networks--id-qualifying
                             :symbol 'foonet/bob
                             :parts [foonet "bob"]
                             :len 2)
@@ -1091,7 +1092,7 @@
     (erc-mode)
     (setq erc-network 'foonet
           erc-server-current-nick "alice"
-          erc-networks--id (make-erc-networks--id-eliding
+          erc-networks--id (make-erc-networks--id-qualifying
                             :symbol 'foonet/alice
                             :parts [foonet "alice"]
                             :len 2)
@@ -1552,17 +1553,17 @@
 (ert-deftest erc-networks--update-server-identity--double-existing ()
   (with-temp-buffer
     (erc-mode)
-    (setq erc-networks--id (make-erc-networks--id-eliding
+    (setq erc-networks--id (make-erc-networks--id-qualifying
                             :parts [foonet "bob"] :len 1))
 
     (with-current-buffer (get-buffer-create "#chan@foonet/bob")
       (erc-mode)
-      (setq erc-networks--id (make-erc-networks--id-eliding
+      (setq erc-networks--id (make-erc-networks--id-qualifying
                               :parts [foonet "bob"] :len 2)))
     (with-current-buffer (get-buffer-create "foonet/alice")
       (erc-mode)
       (setq erc-networks--id
-            (make-erc-networks--id-eliding :parts [foonet "alice"] :len 2)))
+            (make-erc-networks--id-qualifying :parts [foonet "alice"] :len 2)))
 
     (ert-info ("Adopt equivalent identity")
       (should (eq (erc-networks--update-server-identity)
@@ -1580,13 +1581,13 @@
 (ert-deftest erc-networks--update-server-identity--double-new ()
   (with-temp-buffer
     (erc-mode)
-    (setq erc-networks--id (make-erc-networks--id-eliding
+    (setq erc-networks--id (make-erc-networks--id-qualifying
                             :parts [foonet "bob"] :len 1))
 
     (with-current-buffer (get-buffer-create "foonet/alice")
       (erc-mode)
       (setq erc-networks--id
-            (make-erc-networks--id-eliding :parts [foonet "alice"] :len 2)))
+            (make-erc-networks--id-qualifying :parts [foonet "alice"] :len 2)))
     (with-current-buffer (get-buffer-create "#chan@foonet/alice")
       (erc-mode)
       (setq erc-networks--id (buffer-local-value 'erc-networks--id
@@ -1594,7 +1595,7 @@
 
     (ert-info ("Evolve identity to prevent ambiguity")
       (should-not (erc-networks--update-server-identity))
-      (should (= (erc-networks--id-eliding-len erc-networks--id) 2))
+      (should (= (erc-networks--id-qualifying-len erc-networks--id) 2))
       (should (eq (erc-networks--id-symbol erc-networks--id) 'foonet/bob))))
 
   (erc-networks-tests--clean-bufs))
@@ -1602,12 +1603,12 @@
 (ert-deftest erc-networks--update-server-identity--double-bounded ()
   (with-temp-buffer
     (erc-mode)
-    (setq erc-networks--id (make-erc-networks--id-eliding
+    (setq erc-networks--id (make-erc-networks--id-qualifying
                             :parts [foonet "bob"] :len 1))
 
     (with-current-buffer (get-buffer-create "foonet/alice/home")
       (erc-mode)
-      (setq erc-networks--id (make-erc-networks--id-eliding
+      (setq erc-networks--id (make-erc-networks--id-qualifying
                               :parts [foonet "alice" home] :len 3)))
     (with-current-buffer (get-buffer-create "#chan@foonet/alice/home")
       (erc-mode)
@@ -1617,7 +1618,7 @@
 
     (ert-info ("Evolve identity to prevent ambiguity")
       (should-not (erc-networks--update-server-identity))
-      (should (= (erc-networks--id-eliding-len erc-networks--id) 2))
+      (should (= (erc-networks--id-qualifying-len erc-networks--id) 2))
       (should (eq (erc-networks--id-symbol erc-networks--id) 'foonet/bob))))
 
   (erc-networks-tests--clean-bufs))
@@ -1626,12 +1627,12 @@
   (with-temp-buffer
     (erc-mode)
     (setq erc-networks--id
-          (make-erc-networks--id-eliding :parts [foonet "bob"] :len 1))
+          (make-erc-networks--id-qualifying :parts [foonet "bob"] :len 1))
 
     (with-current-buffer (get-buffer-create "foonet")
       (erc-mode)
       (setq erc-networks--id
-            (make-erc-networks--id-eliding :parts [foonet "alice"] :len 1)))
+            (make-erc-networks--id-qualifying :parts [foonet "alice"] :len 1)))
     (with-current-buffer (get-buffer-create "#chan")
       (erc-mode)
       (setq erc--target (erc--target-from-string "#chan")
@@ -1640,7 +1641,7 @@
 
     (ert-info ("Evolve identity to prevent ambiguity")
       (should-not (erc-networks--update-server-identity))
-      (should (= (erc-networks--id-eliding-len erc-networks--id) 2))
+      (should (= (erc-networks--id-qualifying-len erc-networks--id) 2))
       (should (eq (erc-networks--id-symbol erc-networks--id) 'foonet/bob)))
 
     (ert-info ("Collision renamed")
@@ -1657,13 +1658,13 @@
   (with-temp-buffer
     (erc-mode)
     (setq erc-networks--id
-          (make-erc-networks--id-eliding :parts [foonet "bob" home] :len 1))
+          (make-erc-networks--id-qualifying :parts [foonet "bob" home] :len 1))
 
     (with-current-buffer (get-buffer-create "foonet/bob/office")
       (erc-mode)
       (setq erc-networks--id
-            (make-erc-networks--id-eliding :parts [foonet "bob" office]
-                                           :len 3)))
+            (make-erc-networks--id-qualifying :parts [foonet "bob" office]
+                                              :len 3)))
     (with-current-buffer (get-buffer-create "#chan@foonet/bob/office")
       (erc-mode)
       (setq erc-networks--id
@@ -1672,7 +1673,7 @@
 
     (ert-info ("Extend our identity's canonical ID so that it's unique")
       (should-not (erc-networks--update-server-identity))
-      (should (= (erc-networks--id-eliding-len erc-networks--id) 3))))
+      (should (= (erc-networks--id-qualifying-len erc-networks--id) 3))))
 
   (erc-networks-tests--clean-bufs))
 
